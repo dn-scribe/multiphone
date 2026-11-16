@@ -16,7 +16,7 @@
 // The first message a joining phone sends is treated as its join handshake
 // (delivered to the host's onPeerJoin), not as a regular onMessage.
 (function(global){
-  const CODE_CHARS='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ'; // letters only (no I/O, easy to confuse)
   function genCode(){
     let s=''; for(let i=0;i<4;i++) s+=CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)];
     return s;
