@@ -28,6 +28,10 @@
   .choice:active{background:#fff;color:#000}
   input.code{display:block;width:100%;font-size:40px;letter-spacing:10px;text-align:center;font-weight:800;
              background:#000;color:#fff;border:3px solid #fff;border-radius:14px;padding:14px;text-transform:uppercase}
+  input.textfield{display:block;width:100%;font-size:20px;text-align:center;font-weight:700;
+             background:#000;color:#fff;border:3px solid #fff;border-radius:14px;padding:12px}
+  .emojiGrid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+  .emojiGrid .choice{min-height:52px;font-size:26px;padding:2px;border-radius:12px}
   .big{display:block;width:100%;border:3px solid #fff;border-radius:14px;background:#000;color:#fff;
        font-size:22px;font-weight:800;padding:16px}
   .big:active{background:#fff;color:#000}
@@ -84,7 +88,23 @@
 <div class="screen" id="screen-count">
   <div class="topbar"><button id="countBack">◀ Back</button></div>
   <div class="body">
-    <h1>Your Buttons</h1>
+    <h1>You</h1>
+    <p class="hint">Optional: pick a name and emoji so others can tell you apart in the lobby.</p>
+    <input class="textfield" id="nameInput" maxlength="16" placeholder="Name (optional)" autocomplete="off">
+    <div class="grid emojiGrid" id="emojiChoices">
+      <button class="choice" data-e="😀">😀</button>
+      <button class="choice" data-e="🦊">🦊</button>
+      <button class="choice" data-e="🐸">🐸</button>
+      <button class="choice" data-e="🚀">🚀</button>
+      <button class="choice" data-e="🎲">🎲</button>
+      <button class="choice" data-e="🔥">🔥</button>
+      <button class="choice" data-e="🌟">🌟</button>
+      <button class="choice" data-e="🍕">🍕</button>
+      <button class="choice" data-e="🐙">🐙</button>
+      <button class="choice" data-e="🦄">🦄</button>
+      <button class="choice" data-e="🎧">🎧</button>
+      <button class="choice" data-e="⚡">⚡</button>
+    </div>
     <p class="hint">How many buttons do you want on this phone?</p>
     <div class="grid" id="countChoices" style="grid-template-columns:1fr 1fr 1fr">
       <button class="choice" data-n="1">1</button>
@@ -174,8 +194,17 @@ async function keepAwake(){try{wakeLock=await navigator.wakeLock?.request('scree
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')keepAwake()});
 
 // ---------- Setup wizard state ----------
-let role=null, myCount=1, roomCode='', hostCode='';
+let role=null, myCount=1, roomCode='', hostCode='', myName='', myEmoji='';
 
+$('nameInput').addEventListener('input',()=>{ myName=$('nameInput').value.trim().slice(0,16); });
+document.querySelectorAll('#emojiChoices .choice').forEach(b=>{
+  b.onclick=()=>{
+    const wasSel=b.classList.contains('sel');
+    document.querySelectorAll('#emojiChoices .choice').forEach(x=>x.classList.remove('sel'));
+    myEmoji = wasSel ? '' : b.dataset.e;
+    if(!wasSel) b.classList.add('sel');
+  };
+});
 $('joinCode').addEventListener('input',()=>{
   $('joinCode').value=$('joinCode').value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);
 });
@@ -217,17 +246,17 @@ function startHost(){
   isHost=true;
   room=Multiphone.host({
     appId:'simon',
-    onReady:(code,id)=>{ hostCode=code; myId=id; players=[{id:myId,n:myCount}]; enterLobbyHost(); },
+    onReady:(code,id)=>{ hostCode=code; myId=id; players=[{id:myId,n:myCount,name:myName,emoji:myEmoji}]; enterLobbyHost(); },
     onPeerJoin:(id,data)=>{
-      players.push({id,n:data.n});
-      room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n})),hostId:myId,mode});
+      players.push({id,n:data.n,name:data.name,emoji:data.emoji});
+      room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n,name:p.name,emoji:p.emoji})),hostId:myId,mode});
     },
     onPeerLeave:(id)=>{
       const had=players.some(p=>p.id===id);
       players=players.filter(p=>p.id!==id);
       if(!had)return;
       if(gameActive){ gameActive=false; room.broadcast({t:'gameover',round:sequence.length,reason:'left'}); }
-      room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n})),hostId:myId,mode});
+      room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n,name:p.name,emoji:p.emoji})),hostId:myId,mode});
     },
     onMessage:(msg)=>{ if(msg.t==='press') hostHandlePress(msg.idx); else handleMessage(msg); },
     onError:(e)=>{ $('countErr').textContent='Could not start the room. Check your connection and try again.'; $('countGo').disabled=false; },
@@ -236,7 +265,7 @@ function startHost(){
 function startClient(){
   isHost=false;
   room=Multiphone.join({
-    appId:'simon', code:roomCode, joinData:{n:myCount},
+    appId:'simon', code:roomCode, joinData:{n:myCount,name:myName,emoji:myEmoji},
     onOpen:(id)=>{ myId=id; enterLobbyClient(); },
     onMessage:handleMessage,
     onClose:()=>{ if($('screen-lobby').classList.contains('on')||$('screen-stage').classList.contains('on')){
@@ -266,8 +295,8 @@ function enterLobbyClient(){
   $('hostControls').style.display='none';
   show('screen-lobby');
 }
-$('modeBasic').onclick=()=>{mode='basic';$('modeBasic').classList.add('sel');$('modeAdvanced').classList.remove('sel');room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n})),hostId:myId,mode})};
-$('modeAdvanced').onclick=()=>{mode='advanced';$('modeAdvanced').classList.add('sel');$('modeBasic').classList.remove('sel');room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n})),hostId:myId,mode})};
+$('modeBasic').onclick=()=>{mode='basic';$('modeBasic').classList.add('sel');$('modeAdvanced').classList.remove('sel');room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n,name:p.name,emoji:p.emoji})),hostId:myId,mode})};
+$('modeAdvanced').onclick=()=>{mode='advanced';$('modeAdvanced').classList.add('sel');$('modeBasic').classList.remove('sel');room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n,name:p.name,emoji:p.emoji})),hostId:myId,mode})};
 $('startGame').onclick=()=>{
   assignment={}; let gi=0;
   for(const p of players){ assignment[p.id]=[]; for(let k=0;k<p.n;k++) assignment[p.id].push(gi++); }
@@ -276,6 +305,7 @@ $('startGame').onclick=()=>{
   setTimeout(hostNextRound,700);
 };
 
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function renderPlayers(list,hostId,m){
   list=list||players; hostId=hostId||myId; m=m===undefined?mode:m;
   if(isHost){
@@ -286,7 +316,8 @@ function renderPlayers(list,hostId,m){
   list.forEach(p=>{
     const row=document.createElement('div'); row.className='player'+(p.id===myId?' me':'');
     const you=p.id===myId?' (you)':''; const host=p.id===hostId?' — host':'';
-    row.innerHTML=`<span>📱${host}${you}</span><span>${p.n} button${p.n>1?'s':''}</span>`;
+    const label=`${esc(String(p.emoji||'').slice(0,4))||'📱'} ${esc(String(p.name||'').slice(0,20))||'Player'}`;
+    row.innerHTML=`<span>${label}${host}${you}</span><span>${p.n} button${p.n>1?'s':''}</span>`;
     el.appendChild(row);
   });
 }
