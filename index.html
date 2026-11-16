@@ -3,10 +3,29 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Multiphone</title>
 <link rel="stylesheet" href="shared/base.css">
-<style>main{padding:16px;display:grid;gap:12px;max-width:600px;margin:auto}h1{font-size:34px;text-align:center;padding:12px}.btn small{display:block;font-size:15px;font-weight:400;color:#ccc}</style>
-</head><body><main><h1>Multiphone</h1><div id="apps"></div></main>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+main{padding:16px;display:grid;gap:12px;max-width:600px;margin:auto}
+h1{font-size:34px;text-align:center;padding:12px}
+.btn small{display:block;font-size:15px;font-weight:400;color:#ccc}
+#qrBox{border:3px solid #fff;border-radius:14px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:8px}
+#qrBox p{font-size:15px;color:#ccc;text-align:center}
+#qr img{display:block;width:180px;height:180px;background:#fff;padding:8px;border-radius:8px}
+</style>
+</head><body><main><h1>Multiphone</h1><div id="apps"></div>
+<div id="qrBox">
+  <p>Scan to open this page on another phone</p>
+  <div id="qr"></div>
+</div>
+</main>
 <script>
 fetch('apps.json').then(r=>r.json()).then(apps=>{
   apps.forEach(a=>{const l=document.createElement('a');l.className='btn';l.href=a.path;
   l.innerHTML=`${a.icon||''} ${a.title}<small>${a.desc||''}</small>`;document.getElementById('apps').append(l)})})
+try{
+  const qr=qrcode(0,'M');
+  qr.addData(location.href);
+  qr.make();
+  document.getElementById('qr').innerHTML=qr.createImgTag(5,8);
+}catch(e){document.getElementById('qrBox').style.display='none'}
 </script></body></html>

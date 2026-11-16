@@ -2,7 +2,14 @@
 
 Static GitHub Pages hub of small multi-phone web apps.
 
-- `index.html`: home page that lists the apps from `apps.json`
+[**dn-scribe.github.io/multiphone**](https://dn-scribe.github.io/multiphone/) — scan to open it on another phone:
+
+<a href="https://dn-scribe.github.io/multiphone/"><img src="assets/qr-home.png" alt="QR code linking to the Multiphone hub" width="180"></a>
+
+- `index.html`: home page that lists the apps from `apps.json`, and shows a
+  QR code (generated client-side) of its own URL, so it can be shared to
+  another phone by scanning
+- `assets/qr-home.png`: static QR code for the live site, embedded above
 - `apps/<id>/index.html`: one self-contained app per folder
 - `shared/`: shared CSS and JS
   - `shared/multiphone.js`: cross-phone networking helper (one phone hosts,
