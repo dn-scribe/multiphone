@@ -9,6 +9,7 @@
 <title>Phone Simon</title>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script src="../../shared/multiphone.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
   html,body{height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,sans-serif;overflow:hidden;touch-action:none}
@@ -33,6 +34,9 @@
   .big[disabled]{opacity:.35}
   .err{color:#ff5252;text-align:center;font-size:16px;min-height:22px}
   .roomcode{font-size:52px;letter-spacing:12px;text-align:center;font-weight:800;border:3px solid #fff;border-radius:14px;padding:16px}
+  #roomQrBox{border:3px solid #fff;border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:8px}
+  #roomQrBox p{font-size:14px;color:#ccc;text-align:center}
+  #roomQr img{display:block;width:150px;height:150px;background:#fff;padding:6px;border-radius:8px}
   .players{display:flex;flex-direction:column;gap:8px}
   .player{border:3px solid #444;border-radius:12px;padding:10px 14px;font-size:18px;display:flex;justify-content:space-between}
   .player.me{border-color:#fff}
@@ -97,6 +101,10 @@
   <div class="body">
     <h1 id="lobbyTitle">Lobby</h1>
     <div class="roomcode" id="roomCode" style="display:none"></div>
+    <div id="roomQrBox" style="display:none">
+      <p>Or scan to join straight away</p>
+      <div id="roomQr"></div>
+    </div>
     <p class="hint" id="lobbyHint"></p>
     <div class="players" id="playerList"></div>
     <div id="hostControls" style="display:none">
@@ -168,14 +176,24 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 // ---------- Setup wizard state ----------
 let role=null, myCount=1, roomCode='', hostCode='';
 
+$('joinCode').addEventListener('input',()=>{
+  $('joinCode').value=$('joinCode').value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);
+});
 $('btnHost').onclick=()=>{audio();keepAwake();role='host';show('screen-count')};
 $('btnJoin').onclick=()=>{audio();keepAwake();role='join';show('screen-join')};
 $('joinBack').onclick=()=>show('screen-role');
 $('joinGo').onclick=()=>{
   const v=$('joinCode').value.trim().toUpperCase();
-  if(v.length!==4){$('joinErr').textContent='Enter the 4-letter code.';return}
+  if(!/^[A-Z]{4}$/.test(v)){$('joinErr').textContent='Enter the 4-letter code (letters only).';return}
   roomCode=v; $('joinErr').textContent=''; show('screen-count');
 };
+
+// A link such as index.html?room=ABCD joins that room directly, as an
+// alternative to typing the code (e.g. scanned from the host's QR code).
+(function(){
+  const r=(new URLSearchParams(location.search).get('room')||'').toUpperCase();
+  if(/^[A-Z]{4}$/.test(r)){ audio(); keepAwake(); role='join'; roomCode=r; show('screen-count'); }
+})();
 $('countBack').onclick=()=>show(role==='host'?'screen-role':'screen-join');
 document.querySelectorAll('#countChoices .choice').forEach(b=>{
   b.onclick=()=>{document.querySelectorAll('#countChoices .choice').forEach(x=>x.classList.remove('sel'));
@@ -232,11 +250,18 @@ function enterLobbyHost(){
   $('roomCode').style.display='block'; $('roomCode').textContent=hostCode;
   $('lobbyHint').textContent='Share this code with the other phones.';
   $('hostControls').style.display='block';
+  try{
+    const joinUrl=location.origin+location.pathname+'?room='+hostCode;
+    const qr=qrcode(0,'M'); qr.addData(joinUrl); qr.make();
+    $('roomQr').innerHTML=qr.createImgTag(4,6);
+    $('roomQrBox').style.display='flex';
+  }catch(e){ $('roomQrBox').style.display='none'; }
   renderPlayers();
   show('screen-lobby');
 }
 function enterLobbyClient(){
   $('roomCode').style.display='none';
+  $('roomQrBox').style.display='none';
   $('lobbyHint').textContent='Waiting for the host to start the game…';
   $('hostControls').style.display='none';
   show('screen-lobby');
