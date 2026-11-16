@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Phone Simon</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="../../shared/multiphone.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  html,body{height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,sans-serif;overflow:hidden;touch-action:none}
+  .screen{display:none;flex-direction:column;height:100%}
+  .screen.on{display:flex}
+  h1{font-size:30px;text-align:center;padding:14px 8px 4px}
+  p.hint{text-align:center;font-size:15px;color:#ccc;padding:0 20px 10px}
+  .topbar{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:3px solid #fff}
+  .topbar a,.topbar button{background:#000;color:#fff;border:3px solid #fff;border-radius:10px;font-size:16px;font-weight:700;padding:8px 12px;text-decoration:none}
+  .spacer{flex:1}
+  .body{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .choice{border:3px solid #fff;border-radius:14px;background:#000;color:#fff;font-size:26px;font-weight:800;
+          display:flex;align-items:center;justify-content:center;min-height:90px;padding:8px}
+  .choice.sel{background:#fff;color:#000}
+  .choice:active{background:#fff;color:#000}
+  input.code{display:block;width:100%;font-size:40px;letter-spacing:10px;text-align:center;font-weight:800;
+             background:#000;color:#fff;border:3px solid #fff;border-radius:14px;padding:14px;text-transform:uppercase}
+  .big{display:block;width:100%;border:3px solid #fff;border-radius:14px;background:#000;color:#fff;
+       font-size:22px;font-weight:800;padding:16px}
+  .big:active{background:#fff;color:#000}
+  .big[disabled]{opacity:.35}
+  .err{color:#ff5252;text-align:center;font-size:16px;min-height:22px}
+  .roomcode{font-size:52px;letter-spacing:12px;text-align:center;font-weight:800;border:3px solid #fff;border-radius:14px;padding:16px}
+  .players{display:flex;flex-direction:column;gap:8px}
+  .player{border:3px solid #444;border-radius:12px;padding:10px 14px;font-size:18px;display:flex;justify-content:space-between}
+  .player.me{border-color:#fff}
+  .modeRow{display:flex;gap:10px}
+  .modeRow .choice{flex:1;font-size:18px;min-height:60px}
+  #stage{flex:1;display:flex;flex-direction:column}
+  #status{text-align:center;font-size:22px;font-weight:800;padding:10px}
+  #dots{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;padding:0 10px 6px;min-height:14px}
+  #dots span{width:12px;height:12px;border-radius:50%;background:#333}
+  #dots span.fill{background:#fff}
+  #pads{flex:1;display:grid;gap:10px;padding:10px}
+  .pad{border-radius:18px;border:4px solid currentColor;display:flex;align-items:center;justify-content:center;transition:background .06s}
+  .pad.on{background:currentColor}
+  #overlay{position:absolute;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:20px;text-align:center}
+  #overlay.on{display:flex}
+  #overlay h2{font-size:36px;color:#ff5252}
+  #overlay p{font-size:20px}
+</style>
+</head>
+<body>
+
+<div class="screen on" id="screen-role">
+  <div class="topbar"><a href="../../">◀ Home</a></div>
+  <div class="body">
+    <h1>Phone Simon</h1>
+    <p class="hint">One phone hosts the game. Everyone else joins with the room code. Each phone gets its own buttons.</p>
+    <div class="grid">
+      <button class="choice" id="btnHost">HOST</button>
+      <button class="choice" id="btnJoin">JOIN</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="screen-join">
+  <div class="topbar"><button id="joinBack">◀ Back</button></div>
+  <div class="body">
+    <h1>Join Game</h1>
+    <p class="hint">Enter the 4-letter room code shown on the host's phone.</p>
+    <input class="code" id="joinCode" maxlength="4" autocapitalize="characters" autocomplete="off" inputmode="text">
+    <button class="big" id="joinGo">Continue</button>
+    <div class="err" id="joinErr"></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-count">
+  <div class="topbar"><button id="countBack">◀ Back</button></div>
+  <div class="body">
+    <h1>Your Buttons</h1>
+    <p class="hint">How many buttons do you want on this phone?</p>
+    <div class="grid" id="countChoices" style="grid-template-columns:1fr 1fr 1fr">
+      <button class="choice" data-n="1">1</button>
+      <button class="choice" data-n="2">2</button>
+      <button class="choice" data-n="3">3</button>
+    </div>
+    <button class="big" id="countGo" disabled>Continue</button>
+    <div class="err" id="countErr"></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-lobby">
+  <div class="topbar"><a href="../../">◀ Home</a><div class="spacer"></div></div>
+  <div class="body">
+    <h1 id="lobbyTitle">Lobby</h1>
+    <div class="roomcode" id="roomCode" style="display:none"></div>
+    <p class="hint" id="lobbyHint"></p>
+    <div class="players" id="playerList"></div>
+    <div id="hostControls" style="display:none">
+      <p class="hint">Mode</p>
+      <div class="modeRow">
+        <button class="choice sel" id="modeBasic">Basic</button>
+        <button class="choice" id="modeAdvanced">Advanced (speeds up)</button>
+      </div>
+      <button class="big" id="startGame" style="margin-top:14px">Start Game</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="screen-stage" style="position:relative">
+  <div class="topbar"><div id="roundLabel" style="font-weight:800;font-size:18px">Round 0</div><div class="spacer"></div><div id="modeLabel" style="font-size:14px;color:#aaa"></div></div>
+  <div id="stage">
+    <div id="status">Get ready…</div>
+    <div id="dots"></div>
+    <div id="pads"></div>
+  </div>
+  <div id="overlay">
+    <h2>GAME OVER</h2>
+    <p id="finalRound"></p>
+    <button class="big" id="playAgain" style="display:none">Play Again</button>
+    <p class="hint" id="waitHost" style="display:none">Waiting for the host to start a new round…</p>
+    <a class="big" href="../../" style="text-decoration:none;text-align:center">Home</a>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const show=id=>{document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));$(id).classList.add('on')};
+
+// ---------- Audio ----------
+let ctx,master;
+function audio(){
+  if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const comp=ctx.createDynamicsCompressor(); master=ctx.createGain(); master.gain.value=0.9;
+    master.connect(comp); comp.connect(ctx.destination); }
+  if(ctx.state==='suspended') ctx.resume();
+  return ctx;
+}
+function env(g,t,peak,attack,decay){
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(peak,t+attack);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+attack+decay);
+}
+function playTone(freq,dur){
+  audio();
+  const t=ctx.currentTime+0.001,o=ctx.createOscillator(),g=ctx.createGain(),o2=ctx.createOscillator(),g2=ctx.createGain();
+  o.type='triangle'; o.frequency.setValueAtTime(freq,t); env(g,t,0.55,0.004,dur); o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+0.05);
+  o2.type='sine'; o2.frequency.setValueAtTime(freq*2,t); env(g2,t,0.15,0.004,dur*0.6); o2.connect(g2); g2.connect(master); o2.start(t); o2.stop(t+dur*0.6+0.05);
+}
+function playBuzzer(){
+  audio();
+  const t=ctx.currentTime+0.001,o=ctx.createOscillator(),g=ctx.createGain();
+  o.type='sawtooth'; o.frequency.setValueAtTime(220,t); o.frequency.exponentialRampToValueAtTime(55,t+0.6);
+  env(g,t,0.6,0.01,0.6); o.connect(g); g.connect(master); o.start(t); o.stop(t+0.7);
+}
+const PENTA=[0,3,5,7,10];
+function midiForIndex(i){return 45+PENTA[i%5]+12*Math.floor(i/5)}
+function freqForIndex(i){return 440*Math.pow(2,(midiForIndex(i)-69)/12)}
+function colorForIndex(i){return `hsl(${(i*67)%360} 85% 50%)`}
+
+let wakeLock=null;
+async function keepAwake(){try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')keepAwake()});
+
+// ---------- Setup wizard state ----------
+let role=null, myCount=1, roomCode='', hostCode='';
+
+$('btnHost').onclick=()=>{audio();keepAwake();role='host';show('screen-count')};
+$('btnJoin').onclick=()=>{audio();keepAwake();role='join';show('screen-join')};
+$('joinBack').onclick=()=>show('screen-role');
+$('joinGo').onclick=()=>{
+  const v=$('joinCode').value.trim().toUpperCase();
+  if(v.length!==4){$('joinErr').textContent='Enter the 4-letter code.';return}
+  roomCode=v; $('joinErr').textContent=''; show('screen-count');
+};
+$('countBack').onclick=()=>show(role==='host'?'screen-role':'screen-join');
+document.querySelectorAll('#countChoices .choice').forEach(b=>{
+  b.onclick=()=>{document.querySelectorAll('#countChoices .choice').forEach(x=>x.classList.remove('sel'));
+    b.classList.add('sel'); myCount=+b.dataset.n; $('countGo').disabled=false};
+});
+$('countGo').onclick=()=>{
+  $('countGo').disabled=true; $('countErr').textContent='';
+  if(role==='host') startHost(); else startClient();
+};
+
+// ---------- Networking (shared/multiphone.js handles PeerJS + room codes) ----------
+let room,myId,isHost=false;
+let players=[]; // host only: [{id,n}]
+let mode='basic';
+let assignment={}, myButtons=[];
+let sequence=[], expectedIndex=0, awaitingServer=false, gameActive=false;
+let curInterval=550, curOn=340, curLen=0;
+let awaitingClient=false;
+
+function startHost(){
+  isHost=true;
+  room=Multiphone.host({
+    appId:'simon',
+    onReady:(code,id)=>{ hostCode=code; myId=id; players=[{id:myId,n:myCount}]; enterLobbyHost(); },
+    onPeerJoin:(id,data)=>{
+      players.push({id,n:data.n});
+      room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n})),hostId:myId,mode});
+    },
+    onPeerLeave:(id)=>{
+      const had=players.some(p=>p.id===id);
+      players=players.filter(p=>p.id!==id);
+      if(!had)return;
+      if(gameActive){ gameActive=false; room.broadcast({t:'gameover',round:sequence.length,reason:'left'}); }
+      room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n})),hostId:myId,mode});
+    },
+    onMessage:(msg)=>{ if(msg.t==='press') hostHandlePress(msg.idx); else handleMessage(msg); },
+    onError:(e)=>{ $('countErr').textContent='Could not start the room. Check your connection and try again.'; $('countGo').disabled=false; },
+  });
+}
+function startClient(){
+  isHost=false;
+  room=Multiphone.join({
+    appId:'simon', code:roomCode, joinData:{n:myCount},
+    onOpen:(id)=>{ myId=id; enterLobbyClient(); },
+    onMessage:handleMessage,
+    onClose:()=>{ if($('screen-lobby').classList.contains('on')||$('screen-stage').classList.contains('on')){
+      alert('Lost connection to the host.'); location.reload(); } },
+    onError:(e)=>{ $('countErr').textContent='Could not find that room. Check the code and try again.'; $('countGo').disabled=false; },
+  });
+}
+
+// ---------- Lobby UI ----------
+function enterLobbyHost(){
+  $('roomCode').style.display='block'; $('roomCode').textContent=hostCode;
+  $('lobbyHint').textContent='Share this code with the other phones.';
+  $('hostControls').style.display='block';
+  renderPlayers();
+  show('screen-lobby');
+}
+function enterLobbyClient(){
+  $('roomCode').style.display='none';
+  $('lobbyHint').textContent='Waiting for the host to start the game…';
+  $('hostControls').style.display='none';
+  show('screen-lobby');
+}
+$('modeBasic').onclick=()=>{mode='basic';$('modeBasic').classList.add('sel');$('modeAdvanced').classList.remove('sel');room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n})),hostId:myId,mode})};
+$('modeAdvanced').onclick=()=>{mode='advanced';$('modeAdvanced').classList.add('sel');$('modeBasic').classList.remove('sel');room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n})),hostId:myId,mode})};
+$('startGame').onclick=()=>{
+  assignment={}; let gi=0;
+  for(const p of players){ assignment[p.id]=[]; for(let k=0;k<p.n;k++) assignment[p.id].push(gi++); }
+  sequence=[]; expectedIndex=0; gameActive=true;
+  room.broadcast({t:'start',assignment,mode});
+  setTimeout(hostNextRound,700);
+};
+
+function renderPlayers(list,hostId,m){
+  list=list||players; hostId=hostId||myId; m=m===undefined?mode:m;
+  if(isHost){
+    $('modeBasic').classList.toggle('sel',m==='basic');
+    $('modeAdvanced').classList.toggle('sel',m==='advanced');
+  }
+  const el=$('playerList'); el.innerHTML='';
+  list.forEach(p=>{
+    const row=document.createElement('div'); row.className='player'+(p.id===myId?' me':'');
+    const you=p.id===myId?' (you)':''; const host=p.id===hostId?' — host':'';
+    row.innerHTML=`<span>📱${host}${you}</span><span>${p.n} button${p.n>1?'s':''}</span>`;
+    el.appendChild(row);
+  });
+}
+
+// ---------- Game: host orchestration ----------
+function timing(round,advanced){
+  if(!advanced) return {interval:550,on:340};
+  const floor=300, base=650;
+  const interval=Math.max(floor, base-(round-1)*18);
+  return {interval, on:Math.round(interval*0.62)};
+}
+function hostNextRound(){
+  const total=Object.values(assignment).reduce((a,b)=>a+b.length,0);
+  sequence.push(Math.floor(Math.random()*total));
+  expectedIndex=0;
+  const {interval,on}=timing(sequence.length, mode==='advanced');
+  room.broadcast({t:'roundstart',round:sequence.length,interval,on});
+  sequence.forEach((idx,i)=>{
+    setTimeout(()=>room.broadcast({t:'flash',idx}), 500+i*interval);
+  });
+  const endTime=500+sequence.length*interval+250;
+  setTimeout(()=>{ awaitingServer=true; room.broadcast({t:'inputphase'}); }, endTime);
+}
+function hostHandlePress(idx){
+  if(!awaitingServer||!gameActive) return;
+  if(idx===sequence[expectedIndex]){
+    expectedIndex++;
+    room.broadcast({t:'correct',step:expectedIndex});
+    if(expectedIndex===sequence.length){
+      awaitingServer=false;
+      setTimeout(hostNextRound,1100);
+    }
+  } else {
+    awaitingServer=false; gameActive=false;
+    room.broadcast({t:'gameover',round:sequence.length,wrongIdx:idx});
+  }
+}
+
+// ---------- Universal message handler (host loopback + clients) ----------
+function handleMessage(msg){
+  switch(msg.t){
+    case 'lobby':
+      players=msg.players; renderPlayers(msg.players,msg.hostId,msg.mode);
+      if(!isHost) mode=msg.mode;
+      break;
+    case 'start': startGameLocal(msg); break;
+    case 'roundstart': uiRoundStart(msg); break;
+    case 'flash': uiFlash(msg.idx); break;
+    case 'inputphase': awaitingClient=true; setStatus('Your turn!'); break;
+    case 'correct': uiCorrect(msg.step); break;
+    case 'gameover': uiGameOver(msg); break;
+  }
+}
+
+function startGameLocal(msg){
+  assignment=msg.assignment; mode=msg.mode;
+  myButtons=(assignment[myId]||[]).map(idx=>({idx,color:colorForIndex(idx),el:null}));
+  const pads=$('pads'); pads.innerHTML='';
+  pads.style.gridTemplateRows=`repeat(${myButtons.length},1fr)`;
+  myButtons.forEach(b=>{
+    const p=document.createElement('div'); p.className='pad'; p.style.color=b.color;
+    p.addEventListener('pointerdown',e=>{
+      e.preventDefault();
+      if(!awaitingClient) return;
+      awaitingClient=false;
+      flashPad(b,curOn||300); playTone(freqForIndex(b.idx),(curOn||300)/1000);
+      navigator.vibrate?.(15);
+      if(isHost) hostHandlePress(b.idx); else room.send({t:'press',idx:b.idx});
+    });
+    b.el=p; pads.appendChild(p);
+  });
+  $('modeLabel').textContent=mode==='advanced'?'Advanced':'Basic';
+  $('overlay').classList.remove('on');
+  setStatus('Get ready…');
+  show('screen-stage');
+}
+function findPad(idx){const b=myButtons.find(x=>x.idx===idx);return b}
+function flashPad(b,ms){
+  b.el.classList.add('on');
+  setTimeout(()=>b.el.classList.remove('on'), ms);
+}
+function setStatus(s){$('status').textContent=s}
+function uiRoundStart(msg){
+  curInterval=msg.interval; curOn=msg.on; curLen=msg.round;
+  awaitingClient=false;
+  $('roundLabel').textContent='Round '+msg.round;
+  setStatus('Watch!');
+  const dots=$('dots'); dots.innerHTML='';
+  for(let i=0;i<curLen;i++){const s=document.createElement('span');dots.appendChild(s)}
+}
+function uiFlash(idx){
+  const b=findPad(idx); if(!b) return;
+  flashPad(b,curOn); playTone(freqForIndex(idx),curOn/1000);
+}
+function uiCorrect(step){
+  const dots=$('dots').children;
+  for(let i=0;i<step;i++) dots[i]?.classList.add('fill');
+  if(step===curLen){ setStatus('Round clear! 🎉'); awaitingClient=false; }
+  else { awaitingClient=true; setStatus('Your turn!'); }
+}
+function uiGameOver(msg){
+  awaitingClient=false; gameActive=false;
+  setStatus('Game over');
+  playBuzzer();
+  $('finalRound').textContent='Reached round '+msg.round+(msg.reason==='left'?' — a player disconnected':'');
+  $('playAgain').style.display=isHost?'block':'none';
+  $('waitHost').style.display=isHost?'none':'block';
+  $('overlay').classList.add('on');
+}
+$('playAgain').onclick=()=>{
+  sequence=[]; expectedIndex=0; gameActive=true;
+  $('overlay').classList.remove('on');
+  room.broadcast({t:'start',assignment,mode});
+  setTimeout(hostNextRound,700);
+};
+document.addEventListener('contextmenu',e=>e.preventDefault());
+</script>
+</body>
+</html>

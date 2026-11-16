@@ -1,3 +1,4 @@
 [
-  {"id":"band","title":"Phone Band","desc":"Each phone is an instrument","path":"apps/band/","icon":"🥁"}
+  {"id":"band","title":"Phone Band","desc":"Each phone is an instrument","path":"apps/band/","icon":"🥁"},
+  {"id":"simon","title":"Phone Simon","desc":"A memory game shared across your phones","path":"apps/simon/","icon":"🧠"}
 ]
