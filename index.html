@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Multiphone</title>
+<link rel="stylesheet" href="shared/base.css">
+<style>main{padding:16px;display:grid;gap:12px;max-width:600px;margin:auto}h1{font-size:34px;text-align:center;padding:12px}.btn small{display:block;font-size:15px;font-weight:400;color:#ccc}</style>
+</head><body><main><h1>Multiphone</h1><div id="apps"></div></main>
+<script>
+fetch('apps.json').then(r=>r.json()).then(apps=>{
+  apps.forEach(a=>{const l=document.createElement('a');l.className='btn';l.href=a.path;
+  l.innerHTML=`${a.icon||''} ${a.title}<small>${a.desc||''}</small>`;document.getElementById('apps').append(l)})})
+</script></body></html>
