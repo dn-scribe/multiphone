@@ -238,6 +238,7 @@ function createControlsPanel(el,room){
   el.innerHTML=`
     <div class="body">
       <p class="nowPlaying">—</p>
+      <button class="big previewBtn" type="button">▶️ Hear it</button>
       <div class="grid presetChoices" style="grid-template-columns:repeat(4,1fr)">
         <button class="choice small" type="button" data-p="epiano">E.Piano</button>
         <button class="choice small" type="button" data-p="bell">Bell</button>
@@ -269,8 +270,8 @@ function createControlsPanel(el,room){
   const q=sel=>el.querySelector(sel);
   let patch=lsGet('patch',null)||DEFAULT_PATCH;
   let previewVoice=null, previewTimer=null;
-  function stopPreview(){ if(previewVoice){ releaseVoice(previewVoice,patch); previewVoice=null; } }
-  function schedulePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(()=>{ stopPreview(); previewVoice=triggerVoice(patch,440); },40); }
+  function stopPreview(){ clearTimeout(previewTimer); if(previewVoice){ releaseVoice(previewVoice,patch); previewVoice=null; } }
+  function playPreview(){ stopPreview(); previewVoice=triggerVoice(patch,440); previewTimer=setTimeout(stopPreview,550); }
   function setSliders(p){
     q('.sRatio').value=p.ratio; q('.sFm').value=p.fm; q('.sA').value=p.a; q('.sD').value=p.d;
     q('.sS').value=p.s; q('.sR').value=p.r; q('.sVol').value=p.vol;
@@ -295,8 +296,8 @@ function createControlsPanel(el,room){
     updateReadouts();
     lsSet('patch',patch);
     room.send({t:'patch',patch});
-    schedulePreview();
   }
+  q('.previewBtn').onclick=playPreview;
   el.querySelectorAll('.presetChoices .choice').forEach(b=>{ b.onclick=()=>{ setSliders(PRESETS[b.dataset.p]); apply(); }; });
   el.querySelectorAll('.waveChoices .choice').forEach(b=>{
     b.onclick=()=>{ el.querySelectorAll('.waveChoices .choice').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); apply(); };
