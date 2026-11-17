@@ -1,7 +1,7 @@
 # FM-1 Clone — Requirements
 
-Two phones: one is the keyboard, the other is the controls surface for
-an FM synth. Inspired by the M-VAVE FM-1 hardware synth and its
+Your phones become a tiny FM synth: a Keyboard, a Controls surface,
+and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
 "Felucca" community firmware — naming/engine concepts only, see
 `adr/0001`.
 
@@ -54,12 +54,21 @@ an FM synth. Inspired by the M-VAVE FM-1 hardware synth and its
   version.
 - [x] **Single Phone Mode**: a real, first-class way to use the whole
   app alone, not a debug toggle — a third button on the role screen
-  mounts both the Keyboard and Controls panels locally (no network),
-  side by side and both live at once on a wide screen, or switchable
-  one at a time with a bar at top on a narrow one, never losing
-  either panel's state when switching (`adr/0008`). Built on new
-  generic infra (`shared/single-phone.js` + `.css`) any future
-  multi-role app can reuse the same way.
+  mounts every role's panel locally (no network), side by side and
+  all live at once on a wide screen, or switchable one at a time with
+  a bar at top on a narrow one, never losing any panel's state when
+  switching (`adr/0008`). Built on generic infra
+  (`shared/single-phone.js` + `.css`) any future multi-role app can
+  reuse the same way.
+- [x] **Sequencer, Phase 1**: a third role. One track, 16 steps, each a
+  plain on/off toggle, all playing the same fixed pitch (A4) with
+  whatever patch this phone has. Tempo slider, Play/Stop, steps+tempo
+  persist via `localStorage` (per phone, same tradeoff as patch/octave
+  persistence). Deliberately minimal — see `adr/0010` for what's
+  phased in next and why a 1:1 clone of Felucca's sequencer (4 tracks,
+  64 steps, per-step chords/ties/accent/slide/chance/ratchets/
+  conditions, parameter locks, song mode, live-record-with-overdub)
+  isn't attempted in one step.
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -72,9 +81,18 @@ an FM synth. Inspired by the M-VAVE FM-1 hardware synth and its
 - [ ] Visual feedback on the Controls screen when more than one
   Keyboard phone is connected (currently "now playing" just shows the
   latest note from any Keyboard).
-- [ ] Validation/guard rails if both phones pick the same role (v1:
-  allowed, just means no Keyboard — or two independent Controls with
-  no one playing).
+- [ ] Validation/guard rails if multiple phones pick the same role
+  (v1: allowed — e.g. two Controls and no Keyboard is possible).
+- [ ] Sequencer Phase 2: multiple tracks (toward Felucca's 4), each
+  with its own preset; variable pattern length (16/32/64); per-step
+  velocity/accent; mute/solo per track; swing.
+- [ ] Sequencer Phase 3: per-step ties/slides/chords/ratchets/chance/
+  conditions; parameter locks; pattern save + song mode (chaining
+  patterns, like Felucca's up-to-16-section song mode); live recording
+  by listening for the Keyboard's own `note` messages, with quantize.
+- [ ] Sequencer timing is a plain `setInterval`, not sample-accurate
+  lookahead scheduling (`adr/0010`) — revisit if later phases make
+  timing precision actually matter (e.g. swing, ratchets).
 
 ## Explicitly out of scope (for now)
 - Talking to real FM-1 hardware over MIDI/USB — ruled out, see
