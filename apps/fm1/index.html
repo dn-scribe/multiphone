@@ -42,7 +42,7 @@
   input[type=range]{width:100%;height:34px;accent-color:#fff;background:transparent}
   .octRow{display:flex;justify-content:center;align-items:center;gap:10px;padding:6px}
   .octBtn{background:#000;color:#fff;border:3px solid #fff;border-radius:10px;font-size:16px;font-weight:700;padding:8px 14px}
-  .octBtn:active{background:#fff;color:#000}
+  .octBtn:active,.octBtn.active{background:#fff;color:#000}
   .octLabel{font-weight:800;font-size:16px;min-width:64px;text-align:center}
   .keys{flex:1;display:flex;min-height:0}
   .key{flex:1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;
@@ -52,6 +52,7 @@
   .key.blk{background:#000;color:#fff;border:2px solid #fff}
   .key.on{background:#00e5ff !important;color:#000 !important}
   .nowPlaying{font-size:18px;font-weight:800;min-height:26px;text-align:center;padding:4px}
+  .instrumentGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px}
   .seqTransport{display:flex;align-items:center;gap:10px}
   .seqTrack{border:2px solid #333;border-radius:10px;padding:8px;margin-top:10px}
   .seqTrackHead{display:flex;gap:6px;margin-bottom:8px}
@@ -64,6 +65,8 @@
   .seqStep.cur{border-color:#00e5ff}
   .seqStep.on.cur{background:#00e5ff}
   .seqStep.accent::after{content:'';position:absolute;inset:3px;border:2px solid #ff9100;border-radius:4px;pointer-events:none}
+  .seqStep.editing{box-shadow:0 0 0 3px #00e5ff inset}
+  .seqStepDetail{border-top:2px dashed #333;margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:4px}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:10}
   .overlay.on{display:flex}
   .overlay img{background:#fff;padding:8px;border-radius:8px;width:180px;height:180px}
@@ -191,6 +194,20 @@ const LS_PREFIX='multiphone.fm1.';
 function lsGet(key,fallback){ try{ const v=localStorage.getItem(LS_PREFIX+key); return v==null?fallback:JSON.parse(v); }catch(e){ return fallback; } }
 function lsSet(key,val){ try{ localStorage.setItem(LS_PREFIX+key,JSON.stringify(val)); }catch(e){} }
 
+// Saved instruments: custom patches the Controls panel names and keeps, so
+// the Sequencer (and Controls itself) can pick them alongside the 4 built-in
+// presets — see adr/0012. Same per-phone-only storage as everything else.
+function loadCustomInstruments(){ return lsGet('instruments',[]); }
+function saveCustomInstruments(list){ lsSet('instruments',list); }
+function allInstruments(){
+  const builtins=PRESET_ORDER.map(key=>({key:'preset:'+key,label:PRESET_LABELS[key],patch:PRESETS[key]}));
+  const custom=loadCustomInstruments().map(inst=>({key:'custom:'+inst.id,label:inst.name,patch:inst.patch}));
+  return builtins.concat(custom);
+}
+function resolveInstrument(key){
+  return allInstruments().find(i=>i.key===key) || {key:'preset:epiano',label:PRESET_LABELS.epiano,patch:PRESETS.epiano};
+}
+
 let wakeLock=null;
 async function keepAwake(){try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')keepAwake()});
@@ -254,12 +271,9 @@ function createControlsPanel(el,room){
     <div class="body">
       <p class="nowPlaying">—</p>
       <button class="big previewBtn" type="button">▶️ Hear it</button>
-      <div class="grid presetChoices" style="grid-template-columns:repeat(4,1fr)">
-        <button class="choice small" type="button" data-p="epiano">E.Piano</button>
-        <button class="choice small" type="button" data-p="bell">Bell</button>
-        <button class="choice small" type="button" data-p="bass">Bass</button>
-        <button class="choice small" type="button" data-p="brass">Brass</button>
-      </div>
+      <label class="ctlLabel">Instruments <span style="font-weight:400">(hold a custom one to delete)</span></label>
+      <div class="instrumentGrid presetChoices"></div>
+      <button class="big saveInstrumentBtn" type="button">💾 Save as Instrument</button>
       <label class="ctlLabel">Carrier wave</label>
       <div class="grid waveChoices" style="grid-template-columns:repeat(4,1fr)">
         <button class="choice small" type="button" data-w="sine">Sine</button>
@@ -312,8 +326,38 @@ function createControlsPanel(el,room){
     lsSet('patch',patch);
     room.send({t:'patch',patch});
   }
+  function renderInstruments(){
+    const wrap=q('.presetChoices'); wrap.innerHTML='';
+    allInstruments().forEach(inst=>{
+      const isCustom=inst.key.startsWith('custom:');
+      const b=document.createElement('button'); b.type='button'; b.className='choice small';
+      b.textContent=inst.label;
+      let holdTimer=null, held=false;
+      b.addEventListener('pointerdown',e=>{
+        e.preventDefault(); held=false;
+        if(isCustom) holdTimer=setTimeout(()=>{
+          held=true;
+          if(confirm('Delete "'+inst.label+'"? This can\'t be undone.')){
+            saveCustomInstruments(loadCustomInstruments().filter(x=>'custom:'+x.id!==inst.key));
+            renderInstruments();
+          }
+        },600);
+      });
+      const endHold=()=>clearTimeout(holdTimer);
+      b.addEventListener('pointerup',()=>{ endHold(); if(!held){ setSliders(inst.patch); apply(); } });
+      b.addEventListener('pointerleave',endHold); b.addEventListener('pointercancel',endHold);
+      wrap.appendChild(b);
+    });
+  }
   q('.previewBtn').onclick=playPreview;
-  el.querySelectorAll('.presetChoices .choice').forEach(b=>{ b.onclick=()=>{ setSliders(PRESETS[b.dataset.p]); apply(); }; });
+  q('.saveInstrumentBtn').onclick=()=>{
+    const name=(prompt('Name this instrument:')||'').trim().slice(0,24);
+    if(!name) return;
+    const list=loadCustomInstruments();
+    list.push({id:Date.now()+'-'+Math.random().toString(36).slice(2,6),name,patch:Object.assign({},patch)});
+    saveCustomInstruments(list);
+    renderInstruments();
+  };
   el.querySelectorAll('.waveChoices .choice').forEach(b=>{
     b.onclick=()=>{ el.querySelectorAll('.waveChoices .choice').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); apply(); };
   });
@@ -325,19 +369,24 @@ function createControlsPanel(el,room){
     }
   });
   setSliders(patch);
+  renderInstruments();
 }
-// Phase 2 step sequencer: 4 tracks (toward Felucca's 4), each with its own
-// preset, a shared pattern length (16/32/64) and tempo/swing, per-step
-// accent, and per-track mute/solo. Every pitch is still fixed (A4) -
-// per-step pitch/melody is not in scope yet (see adr/0011). Timing is a
-// self-rescheduling setTimeout chain (not sample-accurate lookahead
-// scheduling - see adr/0010) so swing's per-step variable delay is easy to
-// express; still fine for this app's needs.
+// Step sequencer. Phase 1: one track, on/off only. Phase 2: 4 tracks
+// (toward Felucca's 4), each with its own instrument, a shared pattern
+// length (16/32/64), tempo/swing, accent, mute/solo. Phase 3 (this
+// version): per-step ratchet/chance/condition, via a per-track Edit mode
+// (see adr/0013) - deliberately NOT including per-step pitch, ties,
+// slides, chords, parameter locks, song mode or live recording, which
+// stay open (several of those genuinely need per-step pitch first, which
+// this still doesn't have). Timing is a self-rescheduling setTimeout
+// chain (not sample-accurate lookahead scheduling - see adr/0010) so
+// swing's per-step variable delay is easy to express.
 function createSequencerPanel(el,room){
   el.innerHTML=`
     <div class="body">
       <div class="seqTransport">
         <button class="octBtn seqPlay" type="button">▶️ Play</button>
+        <button class="octBtn fillBtn" type="button">FILL</button>
       </div>
       <label class="ctlLabel">Tempo <span class="vBpm"></span></label>
       <input type="range" class="sBpm" min="60" max="200" step="1">
@@ -349,13 +398,18 @@ function createSequencerPanel(el,room){
         <button class="choice small" type="button" data-len="32">32</button>
         <button class="choice small" type="button" data-len="64">64</button>
       </div>
+      <p class="hint" style="padding:4px 0 0">Tap a step: on/off. Hold a step: accent. Track's ✏️: pick a step to set ratchet/chance/condition.</p>
       <div class="seqTracks"></div>
     </div>`;
   const q=sel=>el.querySelector(sel);
   const SEQ_NOTE=69; // A4 - every active step plays this one pitch (no per-step melody yet)
-  const TRACK_DEFAULT_PRESETS=['epiano','bass','bell','brass'];
+  const TRACK_DEFAULT_KEYS=['preset:epiano','preset:bass','preset:bell','preset:brass'];
+  const RATCHETS=[1,2,3,4];
+  const CHANCES=[100,75,50,25];
+  const CONDITIONS=[['all','All'],['1:2','1:2'],['2:2','2:2'],['fill','Fill']];
 
-  function newSteps(n){ return Array.from({length:n},()=>({on:false,accent:false})); }
+  function newStep(){ return {on:false,accent:false,ratchet:1,chance:100,condition:'all'}; }
+  function newSteps(n){ return Array.from({length:n},newStep); }
   function resizeSteps(steps,n){
     steps=Array.isArray(steps)?steps:[];
     if(steps.length===n) return steps;
@@ -368,13 +422,19 @@ function createSequencerPanel(el,room){
   let swing=lsGet('seqSwing',50);
   let tracks=lsGet('seqTracks',null);
   if(!Array.isArray(tracks)||tracks.length!==4){
-    tracks=TRACK_DEFAULT_PRESETS.map(preset=>({preset,muted:false,solo:false,steps:newSteps(patternLen)}));
+    tracks=TRACK_DEFAULT_KEYS.map(instrumentKey=>({instrumentKey,muted:false,solo:false,steps:newSteps(patternLen)}));
   } else {
-    tracks.forEach(t=>{ t.steps=resizeSteps(t.steps,patternLen); if(!PRESETS[t.preset]) t.preset='epiano'; });
+    tracks.forEach(t=>{
+      if(!t.instrumentKey) t.instrumentKey='preset:'+(t.preset||'epiano'); // migrate Phase 2 saves
+      t.steps=resizeSteps(t.steps,patternLen);
+      t.steps.forEach(s=>{ if(s.ratchet==null) s.ratchet=1; if(s.chance==null) s.chance=100; if(s.condition==null) s.condition='all'; });
+      t.editIndex=0;
+    });
   }
+  tracks.forEach(t=>{ if(t.editIndex==null) t.editIndex=0; });
   function saveTracks(){ lsSet('seqTracks',tracks); }
 
-  let playing=false, timer=null, stepIndex=0;
+  let playing=false, timer=null, stepIndex=0, loopCount=0, fillActive=false;
   let curHighlighters=[]; // refresh() fns for every step button, called each tick
 
   function baseIntervalMs(){ return 60000/bpm/4; } // a straight 16th note
@@ -384,21 +444,44 @@ function createSequencerPanel(el,room){
     const pair=2*baseIntervalMs(), frac=swing/100;
     return i%2===0 ? pair*frac : pair*(1-frac);
   }
+  function stepShouldFire(s){
+    if(s.condition==='fill') return fillActive;
+    if(s.condition==='1:2' && loopCount%2!==1) return false;
+    if(s.condition==='2:2' && loopCount%2!==0) return false;
+    if(s.chance<100 && Math.random()*100>=s.chance) return false;
+    return true;
+  }
+  function fireStep(track,s){
+    const inst=resolveInstrument(track.instrumentKey);
+    const basePatch=Object.assign({},inst.patch,{vol:inst.patch.vol*(s.accent?1.0:0.72)});
+    const n=s.ratchet||1, slice=baseIntervalMs()/n;
+    for(let r=0;r<n;r++){
+      setTimeout(()=>{
+        const v=triggerVoice(basePatch,noteToFreq(SEQ_NOTE));
+        room.send({t:'note',note:SEQ_NOTE,on:true});
+        const holdMs=Math.max(20,slice*0.6);
+        setTimeout(()=>{ releaseVoice(v,basePatch); room.send({t:'note',note:SEQ_NOTE,on:false}); },holdMs);
+      },r*slice);
+    }
+  }
 
   function makeStepButton(track,si){
     const b=document.createElement('button'); b.type='button';
     let holdTimer=null, held=false;
     function refresh(){
       const s=track.steps[si];
-      b.className='seqStep'+(s.on?' on':'')+(s.on&&s.accent?' accent':'')+(playing&&stepIndex===si?' cur':'');
+      const editing=track.editMode&&track.editIndex===si;
+      b.className='seqStep'+(s.on?' on':'')+(s.on&&s.accent?' accent':'')+(playing&&stepIndex===si?' cur':'')+(editing?' editing':'');
     }
     b.addEventListener('pointerdown',e=>{
       e.preventDefault(); held=false;
+      if(track.editMode) return; // tap-to-select handled on pointerup below
       holdTimer=setTimeout(()=>{ held=true; const s=track.steps[si]; if(s.on){ s.accent=!s.accent; saveTracks(); refresh(); } },350);
     });
     const endHold=()=>clearTimeout(holdTimer);
     b.addEventListener('pointerup',()=>{
       endHold();
+      if(track.editMode){ track.editIndex=si; renderTrackDetail(track); updateCurHighlight(); return; }
       if(!held){ const s=track.steps[si]; s.on=!s.on; if(!s.on) s.accent=false; saveTracks(); refresh(); }
     });
     b.addEventListener('pointerleave',endHold);
@@ -407,16 +490,44 @@ function createSequencerPanel(el,room){
     return {el:b,refresh};
   }
 
+  function pickerRow(track,options,isActive,onPick){
+    const row=document.createElement('div'); row.className='grid'; row.style.gridTemplateColumns=`repeat(${options.length},1fr)`;
+    options.forEach(opt=>{
+      const [value,label]=Array.isArray(opt)?opt:[opt,String(opt)];
+      const b=document.createElement('button'); b.type='button'; b.className='choice small'+(isActive(value)?' sel':'');
+      b.textContent=label;
+      b.onclick=()=>{ onPick(value); saveTracks(); renderTrackDetail(track); };
+      row.appendChild(b);
+    });
+    return row;
+  }
+  function renderTrackDetail(track){
+    const panel=track._detailEl; if(!panel) return;
+    panel.innerHTML='';
+    if(!track.editMode){ panel.style.display='none'; return; }
+    panel.style.display='block';
+    const s=track.steps[track.editIndex];
+    const title=document.createElement('div'); title.className='ctlLabel'; title.textContent='Step '+(track.editIndex+1);
+    panel.appendChild(title);
+    const rLabel=document.createElement('div'); rLabel.className='ctlLabel'; rLabel.textContent='Ratchet'; panel.appendChild(rLabel);
+    panel.appendChild(pickerRow(track,RATCHETS.map(n=>[n,n+'x']),v=>s.ratchet===v,v=>{ s.ratchet=v; }));
+    const cLabel=document.createElement('div'); cLabel.className='ctlLabel'; cLabel.textContent='Chance'; panel.appendChild(cLabel);
+    panel.appendChild(pickerRow(track,CHANCES.map(n=>[n,n+'%']),v=>s.chance===v,v=>{ s.chance=v; }));
+    const kLabel=document.createElement('div'); kLabel.className='ctlLabel'; kLabel.textContent='Condition'; panel.appendChild(kLabel);
+    panel.appendChild(pickerRow(track,CONDITIONS,v=>s.condition===v,v=>{ s.condition=v; }));
+  }
+
   function renderTracks(){
     const wrap=q('.seqTracks'); wrap.innerHTML=''; curHighlighters=[];
     tracks.forEach(track=>{
       const trackEl=document.createElement('div'); trackEl.className='seqTrack';
       const head=document.createElement('div'); head.className='seqTrackHead';
-      const presetBtn=document.createElement('button'); presetBtn.type='button'; presetBtn.className='trackBtn presetBtn';
-      presetBtn.textContent=PRESET_LABELS[track.preset];
-      presetBtn.onclick=()=>{
-        track.preset=PRESET_ORDER[(PRESET_ORDER.indexOf(track.preset)+1)%PRESET_ORDER.length];
-        presetBtn.textContent=PRESET_LABELS[track.preset]; saveTracks();
+      const instBtn=document.createElement('button'); instBtn.type='button'; instBtn.className='trackBtn presetBtn';
+      instBtn.textContent=resolveInstrument(track.instrumentKey).label;
+      instBtn.onclick=()=>{
+        const list=allInstruments(); const idx=list.findIndex(i=>i.key===track.instrumentKey);
+        track.instrumentKey=list[(idx+1)%list.length].key;
+        instBtn.textContent=resolveInstrument(track.instrumentKey).label; saveTracks();
       };
       const muteBtn=document.createElement('button'); muteBtn.type='button'; muteBtn.textContent='M';
       muteBtn.className='trackBtn muteBtn'+(track.muted?' active':'');
@@ -424,33 +535,33 @@ function createSequencerPanel(el,room){
       const soloBtn=document.createElement('button'); soloBtn.type='button'; soloBtn.textContent='S';
       soloBtn.className='trackBtn soloBtn'+(track.solo?' active':'');
       soloBtn.onclick=()=>{ track.solo=!track.solo; soloBtn.classList.toggle('active',track.solo); saveTracks(); };
-      head.append(presetBtn,muteBtn,soloBtn);
+      const editBtn=document.createElement('button'); editBtn.type='button'; editBtn.textContent='✏️';
+      editBtn.className='trackBtn editBtn'+(track.editMode?' active':'');
+      editBtn.onclick=()=>{ track.editMode=!track.editMode; editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight(); };
+      head.append(instBtn,muteBtn,soloBtn,editBtn);
       const stepsRow=document.createElement('div'); stepsRow.className='seqStepsRow';
       track.steps.forEach((s,si)=>{
         const {el:stepEl,refresh}=makeStepButton(track,si);
         stepsRow.appendChild(stepEl);
         curHighlighters.push(refresh);
       });
-      trackEl.append(head,stepsRow);
+      const detail=document.createElement('div'); detail.className='seqStepDetail'; detail.style.display='none';
+      track._detailEl=detail;
+      trackEl.append(head,stepsRow,detail);
       wrap.appendChild(trackEl);
+      renderTrackDetail(track);
     });
   }
   function updateCurHighlight(){ curHighlighters.forEach(r=>r()); }
 
   function tick(){
+    if(stepIndex===0) loopCount++;
     updateCurHighlight();
     const anySolo=tracks.some(t=>t.solo);
     tracks.forEach(track=>{
       const audible=anySolo?track.solo:!track.muted;
       const s=track.steps[stepIndex];
-      if(audible&&s&&s.on){
-        const base=PRESETS[track.preset]||DEFAULT_PATCH;
-        const patch=Object.assign({},base,{vol:base.vol*(s.accent?1.0:0.72)});
-        const v=triggerVoice(patch,noteToFreq(SEQ_NOTE));
-        room.send({t:'note',note:SEQ_NOTE,on:true});
-        const holdMs=Math.max(30,baseIntervalMs()*0.6);
-        setTimeout(()=>{ releaseVoice(v,patch); room.send({t:'note',note:SEQ_NOTE,on:false}); },holdMs);
-      }
+      if(audible&&s&&s.on&&stepShouldFire(s)) fireStep(track,s);
     });
     const delay=delayAfterStep(stepIndex);
     stepIndex=(stepIndex+1)%patternLen;
@@ -458,7 +569,7 @@ function createSequencerPanel(el,room){
   }
   function start(){
     if(playing) return;
-    playing=true; stepIndex=0; q('.seqPlay').textContent='⏸ Stop';
+    playing=true; stepIndex=0; loopCount=0; q('.seqPlay').textContent='⏸ Stop';
     tick();
   }
   function stop(){
@@ -467,6 +578,9 @@ function createSequencerPanel(el,room){
     updateCurHighlight();
   }
   q('.seqPlay').onclick=()=>{ playing?stop():start(); };
+  q('.fillBtn').addEventListener('pointerdown',e=>{ e.preventDefault(); fillActive=true; q('.fillBtn').classList.add('active'); });
+  const endFill=()=>{ fillActive=false; q('.fillBtn').classList.remove('active'); };
+  q('.fillBtn').addEventListener('pointerup',endFill); q('.fillBtn').addEventListener('pointerleave',endFill); q('.fillBtn').addEventListener('pointercancel',endFill);
   q('.sBpm').value=bpm; q('.vBpm').textContent=bpm+' BPM';
   q('.sBpm').addEventListener('input',()=>{ bpm=+q('.sBpm').value; q('.vBpm').textContent=bpm+' BPM'; lsSet('seqBpm',bpm); });
   q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
@@ -475,7 +589,7 @@ function createSequencerPanel(el,room){
     b.classList.toggle('sel',+b.dataset.len===patternLen);
     b.onclick=()=>{
       patternLen=+b.dataset.len; lsSet('seqLen',patternLen);
-      tracks.forEach(t=>{ t.steps=resizeSteps(t.steps,patternLen); });
+      tracks.forEach(t=>{ t.steps=resizeSteps(t.steps,patternLen); t.editIndex=Math.min(t.editIndex,patternLen-1); });
       saveTracks();
       stepIndex=stepIndex%patternLen;
       el.querySelectorAll('.lenChoices .choice').forEach(x=>x.classList.toggle('sel',x===b));
