@@ -11,6 +11,10 @@ Static GitHub Pages hub of small multi-phone web apps.
   another phone by scanning
 - `assets/qr-home.png`: static QR code for the live site, embedded above
 - `apps/<id>/index.html`: one self-contained app per folder
+- `apps/<id>/REQUIREMENTS.md` + `apps/<id>/adr/`: each app tracks its own
+  requirements and architecture decision records (ADRs) alongside its code.
+  A folder can exist with just these (no `index.html` yet) while an app is
+  still being planned.
 - `shared/`: shared CSS and JS
   - `shared/multiphone.js`: cross-phone networking helper (one phone hosts,
     others join with a short room code; messages go peer-to-peer over
