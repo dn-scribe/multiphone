@@ -90,6 +90,16 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   chords, parameter locks, pattern save/song mode, or live recording —
   see `adr/0013` for why each of those stays open rather than being
   faked.
+- [x] **Saved patterns + Song mode**: "💾 Save Pattern" snapshots the
+  current tracks/length/swing as a named pattern (tap to restore it
+  into the editor, hold to delete); each saved pattern has a ➕ to
+  append it to a **Song** (an ordered list of pattern + repeat-count
+  entries, ◀/▶ to adjust 1-8, ✕ to remove). **Song Mode** toggles
+  whether Play loops just the current pattern (off, as before) or
+  plays through the whole song, advancing to the next entry once the
+  current pattern has looped its configured number of times
+  (`adr/0014`). Tempo is shared across the whole song, not saved per
+  pattern.
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -119,10 +129,12 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   list.
 - [ ] Sequencer: true continuous per-step velocity, not just the
   binary accent built in Phase 2.
-- [ ] Sequencer Phase 4 (tentative): per-step pitch/melody, ties,
-  slides, chords; parameter locks; pattern save + song mode (chaining
-  patterns, like Felucca's up-to-16-section song mode); live recording
-  by listening for the Keyboard's own `note` messages, with quantize.
+- [ ] Sequencer Phase 5 (tentative): per-step pitch/melody, ties,
+  slides, chords; parameter locks; live recording by listening for the
+  Keyboard's own `note` messages, with quantize.
+- [ ] Song: no reordering UI (remove + re-add via ➕ is the current
+  workaround), no length limit, no duplicate-name prevention for
+  patterns (`adr/0014`).
 - [ ] Sequencer timing is a self-rescheduling `setTimeout` chain, not
   sample-accurate lookahead scheduling (`adr/0010`, `adr/0011`) —
   revisit if a later phase makes timing precision actually matter.

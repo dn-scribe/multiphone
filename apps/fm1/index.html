@@ -398,6 +398,13 @@ function createSequencerPanel(el,room){
         <button class="choice small" type="button" data-len="32">32</button>
         <button class="choice small" type="button" data-len="64">64</button>
       </div>
+      <label class="ctlLabel">Patterns <span style="font-weight:400">(tap: load · hold: delete · ➕: add to song)</span></label>
+      <div class="patternList"></div>
+      <button class="big savePatternBtn" type="button">💾 Save Pattern</button>
+      <label class="ctlLabel">Song</label>
+      <button class="octBtn songModeBtn" type="button">Song Mode: Off</button>
+      <p class="hint songStatus" style="padding:2px 0;min-height:20px"></p>
+      <div class="songList"></div>
       <p class="hint" style="padding:4px 0 0">Tap a step: on/off. Hold a step: accent. Track's ✏️: pick a step to set ratchet/chance/condition.</p>
       <div class="seqTracks"></div>
     </div>`;
@@ -433,6 +440,86 @@ function createSequencerPanel(el,room){
   }
   tracks.forEach(t=>{ if(t.editIndex==null) t.editIndex=0; });
   function saveTracks(){ lsSet('seqTracks',tracks); }
+
+  // Saved patterns (named snapshots of tracks+length+swing, separate from
+  // the always-auto-persisted "current edit") and a song (an ordered list
+  // of pattern+repeat-count entries) chaining them - see adr/0014. Same
+  // per-phone-only storage as everything else (adr/0007).
+  function loadPatternsList(){ return lsGet('patterns',[]); }
+  function savePatternsList(list){ lsSet('patterns',list); }
+  function loadSongList(){ return lsGet('song',[]); }
+  function saveSongList(list){ lsSet('song',list); }
+  function cloneTrackForSave(t){
+    return {instrumentKey:t.instrumentKey,muted:t.muted,solo:t.solo,
+      steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,chance:s.chance,condition:s.condition}))};
+  }
+  function snapshotPattern(name){
+    return {id:Date.now()+'-'+Math.random().toString(36).slice(2,6),name,patternLen,swing,tracks:tracks.map(cloneTrackForSave)};
+  }
+  function applyPattern(p){
+    patternLen=p.patternLen; swing=p.swing;
+    lsSet('seqLen',patternLen); lsSet('seqSwing',swing);
+    tracks=p.tracks.map(t=>({
+      instrumentKey:t.instrumentKey, muted:t.muted, solo:t.solo,
+      steps:resizeSteps(t.steps.map(s=>({on:s.on,accent:s.accent,
+        ratchet:s.ratchet!=null?s.ratchet:1, chance:s.chance!=null?s.chance:100, condition:s.condition||'all'})),patternLen),
+      editMode:false, editIndex:0,
+    }));
+    saveTracks();
+    q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
+    el.querySelectorAll('.lenChoices .choice').forEach(x=>x.classList.toggle('sel',+x.dataset.len===patternLen));
+    renderTracks();
+  }
+  function renderPatterns(){
+    const wrap=q('.patternList'); wrap.innerHTML='';
+    loadPatternsList().forEach(p=>{
+      const row=document.createElement('div'); row.className='seqTrackHead';
+      const nameBtn=document.createElement('button'); nameBtn.type='button'; nameBtn.className='trackBtn presetBtn';
+      nameBtn.textContent=p.name;
+      let holdTimer=null, held=false;
+      nameBtn.addEventListener('pointerdown',e=>{
+        e.preventDefault(); held=false;
+        holdTimer=setTimeout(()=>{
+          held=true;
+          if(confirm('Delete pattern "'+p.name+'"?')){ savePatternsList(loadPatternsList().filter(x=>x.id!==p.id)); renderPatterns(); renderSong(); }
+        },600);
+      });
+      const endHold=()=>clearTimeout(holdTimer);
+      nameBtn.addEventListener('pointerup',()=>{ endHold(); if(!held) applyPattern(p); });
+      nameBtn.addEventListener('pointerleave',endHold); nameBtn.addEventListener('pointercancel',endHold);
+      const addBtn=document.createElement('button'); addBtn.type='button'; addBtn.className='trackBtn'; addBtn.textContent='➕';
+      addBtn.onclick=()=>{ const song=loadSongList(); song.push({patternId:p.id,repeats:1}); saveSongList(song); renderSong(); };
+      row.append(nameBtn,addBtn);
+      wrap.appendChild(row);
+    });
+  }
+  function renderSong(){
+    const wrap=q('.songList'); wrap.innerHTML='';
+    const patterns=loadPatternsList();
+    loadSongList().forEach((entry,idx)=>{
+      const pat=patterns.find(p=>p.id===entry.patternId);
+      const row=document.createElement('div'); row.className='seqTrackHead';
+      const label=document.createElement('div'); label.className='trackBtn presetBtn'; label.style.pointerEvents='none';
+      label.textContent=pat?pat.name:'(deleted)';
+      const dec=document.createElement('button'); dec.type='button'; dec.className='trackBtn'; dec.textContent='◀';
+      const countEl=document.createElement('div'); countEl.className='trackBtn'; countEl.style.pointerEvents='none'; countEl.textContent=entry.repeats+'x';
+      const inc=document.createElement('button'); inc.type='button'; inc.className='trackBtn'; inc.textContent='▶';
+      const rm=document.createElement('button'); rm.type='button'; rm.className='trackBtn'; rm.textContent='✕';
+      dec.onclick=()=>{ const s=loadSongList(); s[idx].repeats=Math.max(1,s[idx].repeats-1); saveSongList(s); renderSong(); };
+      inc.onclick=()=>{ const s=loadSongList(); s[idx].repeats=Math.min(8,s[idx].repeats+1); saveSongList(s); renderSong(); };
+      rm.onclick=()=>{ const s=loadSongList(); s.splice(idx,1); saveSongList(s); renderSong(); };
+      row.append(label,dec,countEl,inc,rm);
+      wrap.appendChild(row);
+    });
+  }
+  let songMode=lsGet('songMode',false), songPos=0;
+  function updateSongStatus(){
+    if(!songMode||!playing){ q('.songStatus').textContent=''; return; }
+    const song=loadSongList();
+    if(song.length===0){ q('.songStatus').textContent='Song is empty — add a pattern with ➕'; return; }
+    const entry=song[songPos]; const pat=loadPatternsList().find(p=>p.id===entry.patternId);
+    q('.songStatus').textContent='▶ '+(songPos+1)+'/'+song.length+' '+(pat?pat.name:'?')+' ('+loopCount+'/'+entry.repeats+')';
+  }
 
   let playing=false, timer=null, stepIndex=0, loopCount=0, fillActive=false;
   let curHighlighters=[]; // refresh() fns for every step button, called each tick
@@ -555,7 +642,22 @@ function createSequencerPanel(el,room){
   function updateCurHighlight(){ curHighlighters.forEach(r=>r()); }
 
   function tick(){
-    if(stepIndex===0) loopCount++;
+    if(stepIndex===0){
+      loopCount++;
+      if(songMode){
+        const song=loadSongList();
+        if(song.length>0){
+          const entry=song[songPos%song.length];
+          if(loopCount>entry.repeats){
+            songPos=(songPos+1)%song.length;
+            loopCount=1;
+            const nextPat=loadPatternsList().find(p=>p.id===song[songPos].patternId);
+            if(nextPat) applyPattern(nextPat);
+          }
+        }
+      }
+      updateSongStatus();
+    }
     updateCurHighlight();
     const anySolo=tracks.some(t=>t.solo);
     tracks.forEach(track=>{
@@ -569,15 +671,36 @@ function createSequencerPanel(el,room){
   }
   function start(){
     if(playing) return;
+    if(songMode){
+      const song=loadSongList();
+      if(song.length>0){
+        songPos=0;
+        const pat=loadPatternsList().find(p=>p.id===song[0].patternId);
+        if(pat) applyPattern(pat);
+      }
+    }
     playing=true; stepIndex=0; loopCount=0; q('.seqPlay').textContent='⏸ Stop';
+    updateSongStatus();
     tick();
   }
   function stop(){
     playing=false; clearTimeout(timer); timer=null;
     q('.seqPlay').textContent='▶️ Play';
     updateCurHighlight();
+    updateSongStatus();
   }
   q('.seqPlay').onclick=()=>{ playing?stop():start(); };
+  q('.savePatternBtn').onclick=()=>{
+    const name=(prompt('Name this pattern:')||'').trim().slice(0,24);
+    if(!name) return;
+    const list=loadPatternsList(); list.push(snapshotPattern(name)); savePatternsList(list); renderPatterns();
+  };
+  function refreshSongModeBtn(){
+    q('.songModeBtn').textContent='Song Mode: '+(songMode?'On':'Off');
+    q('.songModeBtn').classList.toggle('active',songMode);
+  }
+  q('.songModeBtn').onclick=()=>{ songMode=!songMode; lsSet('songMode',songMode); refreshSongModeBtn(); updateSongStatus(); };
+  refreshSongModeBtn();
   q('.fillBtn').addEventListener('pointerdown',e=>{ e.preventDefault(); fillActive=true; q('.fillBtn').classList.add('active'); });
   const endFill=()=>{ fillActive=false; q('.fillBtn').classList.remove('active'); };
   q('.fillBtn').addEventListener('pointerup',endFill); q('.fillBtn').addEventListener('pointerleave',endFill); q('.fillBtn').addEventListener('pointercancel',endFill);
@@ -596,6 +719,8 @@ function createSequencerPanel(el,room){
       renderTracks();
     };
   });
+  renderPatterns();
+  renderSong();
   renderTracks();
 }
 
