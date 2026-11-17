@@ -52,6 +52,12 @@
   .key.blk{background:#000;color:#fff;border:2px solid #fff}
   .key.on{background:#00e5ff !important;color:#000 !important}
   .nowPlaying{font-size:18px;font-weight:800;min-height:26px;text-align:center;padding:4px}
+  .seqTransport{display:flex;align-items:center;gap:10px}
+  .seqSteps{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;padding-top:6px}
+  .seqStep{aspect-ratio:1;border:3px solid #444;border-radius:10px;background:#000}
+  .seqStep.on{background:#fff;border-color:#fff}
+  .seqStep.cur{border-color:#00e5ff}
+  .seqStep.on.cur{background:#00e5ff}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:10}
   .overlay.on{display:flex}
   .overlay img{background:#fff;padding:8px;border-radius:8px;width:180px;height:180px}
@@ -64,7 +70,7 @@
   <div class="topbar"><a href="../../">◀ Home</a></div>
   <div class="body">
     <h1>FM-1 Clone</h1>
-    <p class="hint">Two phones, one tiny FM synth. One phone is the Keyboard, the other is the Controls. One phone hosts, the other joins with a room code.</p>
+    <p class="hint">One tiny FM synth, played across your phones: a Keyboard, a Controls, and now a Sequencer too. One phone hosts, the rest join with a room code.</p>
     <div class="grid">
       <button class="choice" id="btnHost">HOST</button>
       <button class="choice" id="btnJoin">JOIN</button>
@@ -89,10 +95,11 @@
   <div class="topbar"><button id="instrBack">◀ Back</button></div>
   <div class="body">
     <h1>This Phone Is</h1>
-    <p class="hint">Pick what this phone does. The other phone should pick the other role.</p>
-    <div class="grid" id="instrChoices">
+    <p class="hint">Pick what this phone does. The other phones should pick the other roles.</p>
+    <div class="grid" id="instrChoices" style="grid-template-columns:repeat(3,1fr)">
       <button class="choice" data-r="keyboard">🎹<br>Keyboard</button>
       <button class="choice" data-r="controls">🎛️<br>Controls</button>
+      <button class="choice" data-r="sequencer">🥁<br>Sequencer</button>
     </div>
     <button class="big" id="instrGo" disabled>Continue</button>
     <div class="err" id="instrErr"></div>
@@ -311,6 +318,73 @@ function createControlsPanel(el,room){
   });
   setSliders(patch);
 }
+// Phase 1 step sequencer: one track, 16 steps, one fixed pitch per active
+// step (per-step pitch/velocity/etc. are later phases - see REQUIREMENTS).
+// Timing uses a plain setInterval re-armed on BPM change; it's not
+// sample-accurate lookahead scheduling, which is more than this first
+// version needs (see adr/0010).
+function createSequencerPanel(el,room){
+  el.innerHTML=`
+    <div class="body">
+      <div class="seqTransport">
+        <button class="octBtn seqPlay" type="button">▶️ Play</button>
+      </div>
+      <label class="ctlLabel">Tempo <span class="vBpm"></span></label>
+      <input type="range" class="sBpm" min="60" max="200" step="1">
+      <div class="seqSteps"></div>
+    </div>`;
+  const q=sel=>el.querySelector(sel);
+  const SEQ_NOTE=69; // A4 - every active step plays this one pitch in Phase 1
+  let patch=lsGet('patch',null)||DEFAULT_PATCH;
+  let bpm=lsGet('seqBpm',120);
+  let steps=lsGet('seqSteps',null);
+  if(!Array.isArray(steps)||steps.length!==16) steps=new Array(16).fill(false);
+  let playing=false, timer=null, stepIndex=0;
+
+  function intervalMs(){ return 60000/bpm/4; } // steps are 16th notes
+  function renderSteps(){
+    const wrap=q('.seqSteps'); wrap.innerHTML='';
+    steps.forEach((on,i)=>{
+      const b=document.createElement('button');
+      b.type='button';
+      b.className='seqStep'+(on?' on':'')+(playing&&i===stepIndex?' cur':'');
+      b.onclick=()=>{ steps[i]=!steps[i]; lsSet('seqSteps',steps); renderSteps(); };
+      wrap.appendChild(b);
+    });
+  }
+  function highlightCurrent(){
+    el.querySelectorAll('.seqStep').forEach((b,i)=>b.classList.toggle('cur',playing&&i===stepIndex));
+  }
+  function tick(){
+    highlightCurrent();
+    if(steps[stepIndex]){
+      const v=triggerVoice(patch,noteToFreq(SEQ_NOTE));
+      room.send({t:'note',note:SEQ_NOTE,on:true});
+      const holdMs=Math.max(30,intervalMs()*0.6);
+      setTimeout(()=>{ releaseVoice(v,patch); room.send({t:'note',note:SEQ_NOTE,on:false}); },holdMs);
+    }
+    stepIndex=(stepIndex+1)%steps.length;
+  }
+  function start(){
+    if(playing) return;
+    playing=true; stepIndex=0; q('.seqPlay').textContent='⏸ Stop';
+    tick();
+    timer=setInterval(tick,intervalMs());
+  }
+  function stop(){
+    playing=false; clearInterval(timer); timer=null;
+    q('.seqPlay').textContent='▶️ Play';
+    highlightCurrent();
+  }
+  q('.seqPlay').onclick=()=>{ playing?stop():start(); };
+  q('.sBpm').value=bpm; q('.vBpm').textContent=bpm+' BPM';
+  q('.sBpm').addEventListener('input',()=>{
+    bpm=+q('.sBpm').value; q('.vBpm').textContent=bpm+' BPM'; lsSet('seqBpm',bpm);
+    if(playing){ clearInterval(timer); timer=setInterval(tick,intervalMs()); }
+  });
+  room.onMessage(msg=>{ if(msg.t==='patch'){ patch=msg.patch; lsSet('patch',patch); } });
+  renderSteps();
+}
 
 // ---------- Setup wizard ----------
 let netRole=null, roomCode='', hostCode='', instrumentRole=null;
@@ -394,6 +468,7 @@ function enterStage(){
     onMessage(cb){ panelHandlers.push(cb); },
   };
   if(instrumentRole==='keyboard') createKeyboardPanel($('stageContent'),wrapped);
+  else if(instrumentRole==='sequencer') createSequencerPanel($('stageContent'),wrapped);
   else createControlsPanel($('stageContent'),wrapped);
 }
 $('roomPill').onclick=openQr;
@@ -409,17 +484,20 @@ function openQr(){
 $('qrClose').onclick=()=>$('qrOverlay').classList.remove('on');
 
 // ---------- Single Phone Mode (shared/single-phone.js, no network at all) ----------
-// Generic: a future app with more roles (e.g. a sequencer) just lists more
-// panels here — everything else (layout, switching, state-keeps-mounted)
-// comes from shared/single-phone.js for free.
+// Generic: a future role just needs another entry in this list -
+// everything else (layout, switching, state-keeps-mounted) comes from
+// shared/single-phone.js for free. (This is now proven past 2 roles: the
+// Sequencer panel below is the 3rd.)
 function enterSinglePhoneMode(){
   show('screen-singlephone');
   const localRoom=SinglePhone.createRoom();
   const kbPeer=localRoom.addPeer();
   const ctPeer=localRoom.addPeer();
+  const seqPeer=localRoom.addPeer();
   SinglePhone.mountPanels($('spContainer'),[
     {id:'keyboard', label:'🎹 Keyboard', mount:(el)=>createKeyboardPanel(el,kbPeer)},
     {id:'controls', label:'🎛️ Controls', mount:(el)=>createControlsPanel(el,ctPeer)},
+    {id:'sequencer', label:'🥁 Sequencer', mount:(el)=>createSequencerPanel(el,seqPeer)},
   ]);
 }
 
