@@ -24,8 +24,8 @@ Both screens share the same engine code in the one file, so:
 - A Keyboard phone with nobody else connected still plays, using
   whatever patch it last received (or the default preset).
 - A Controls phone with nobody else connected can still preview its
-  current patch: every slider/preset change fires a short local
-  preview note.
+  current patch, by tapping a "▶️ Hear it" button (see `adr/0009` for
+  why that's a button rather than automatic).
 
 ## Consequences
 - Playing feels instant regardless of connection quality.

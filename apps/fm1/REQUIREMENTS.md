@@ -22,8 +22,9 @@ an FM synth. Inspired by the M-VAVE FM-1 hardware synth and its
   or note timing, so there's no playable-note latency (`adr/0004`).
 - [x] Either phone works solo: Keyboard plays with whatever patch it
   last received (or the default preset) even with nobody connected;
-  Controls plays a short local preview note on every parameter change,
-  with or without a Keyboard phone connected (`adr/0004`).
+  Controls has a "▶️ Hear it" button to preview the current patch
+  (bounded to a fixed short duration — never sustains forever),
+  with or without a Keyboard phone connected (`adr/0004`, `adr/0009`).
 - [x] Keyboard UI: one row of 13 flat piano-style keys (white/black
   coloring, not true piano key shapes) spanning an octave + 1, with
   octave up/down buttons (range octave 1-7). Multi-touch works for
