@@ -15,9 +15,13 @@
   step with the room pre-filled.
 - [x] Optional name + emoji per player (tap an emoji again to clear),
   shown in the lobby player list. Peer-supplied, so escaped and
-  length-clamped before rendering.
-- [x] Game-over screen shows the round reached; host can "Play Again"
-  with the same players/button assignment.
+  length-clamped before rendering. Persisted in `localStorage` per
+  phone, so it's pre-filled next time instead of starting blank
+  (`adr/0004`).
+- [x] Game-over screen shows the round reached; **any player** can tap
+  "Play Again," not just the host — the button assignment is rebuilt
+  from whoever is *currently* connected, so a phone that joined after
+  the first game started gets included too (`adr/0004`).
 - [x] Installable as its own home-screen app (`manifest.json` + icons);
   versioned independently in `apps.json` — see root `README.md`.
 
@@ -25,6 +29,8 @@
 - [ ] What should happen if the host disconnects mid-game? (Currently:
   clients just see a "lost connection" alert and reload — no host
   migration.)
-- [ ] Reconnect support if a client drops and rejoins mid-game?
+- [ ] Reconnect support if a client drops and rejoins mid-game? (No
+  stable identity across a reconnect — only the name/emoji you type
+  carries over, via `localStorage`, not an actual session.)
 - [ ] Any limit/warning when total buttons across phones gets very large
   (e.g. 5 phones × 3 buttons = 15)?
