@@ -7,6 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>FM-1 Clone</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script src="../../shared/multiphone.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
@@ -193,7 +195,14 @@ function releaseVoice(v,patch){
   const stopAt=now+patch.r+0.08;
   v.mod.stop(stopAt); v.carrier.stop(stopAt);
 }
-let currentPatch={wave:'sine',ratio:1,fm:2,a:0.01,d:0.5,s:0.4,r:0.4,vol:0.8};
+// Local-only persistence: remembered on THIS phone's browser only, never
+// synced to the other phone (that's what the live network messages are
+// for). Reloading a different phone starts fresh — see adr/0007.
+const LS_PREFIX='multiphone.fm1.';
+function lsGet(key,fallback){ try{ const v=localStorage.getItem(LS_PREFIX+key); return v==null?fallback:JSON.parse(v); }catch(e){ return fallback; } }
+function lsSet(key,val){ try{ localStorage.setItem(LS_PREFIX+key,JSON.stringify(val)); }catch(e){} }
+
+let currentPatch=lsGet('patch',null)||{wave:'sine',ratio:1,fm:2,a:0.01,d:0.5,s:0.4,r:0.4,vol:0.8};
 const heldVoices={}; // note -> voice, for the keyboard's own real notes
 let previewVoice=null, previewTimer=null;
 function stopPreview(){ if(previewVoice){ releaseVoice(previewVoice,currentPatch); previewVoice=null; } }
@@ -271,7 +280,7 @@ function broadcastRoster(){ if(isHost) room.broadcast({t:'roster',peers}); }
 function handleMessage(msg){
   switch(msg.t){
     case 'roster': peers=msg.peers; updateStatus(); break;
-    case 'patch': currentPatch=msg.patch; break;
+    case 'patch': currentPatch=msg.patch; lsSet('patch',currentPatch); if(instrumentRole==='controls') setSliders(currentPatch); break;
     case 'note': if(instrumentRole==='controls') showNowPlaying(msg.note,msg.on); break;
   }
 }
@@ -310,7 +319,7 @@ $('qrClose').onclick=()=>$('qrOverlay').classList.remove('on');
 
 // ---------- Keyboard screen ----------
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-let octave=4;
+let octave=lsGet('octave',4);
 function buildKeys(){
   $('octLabel').textContent='Oct '+octave;
   const keys=$('keys'); keys.innerHTML='';
@@ -340,8 +349,8 @@ function noteOff(note,el){
   releaseVoice(v,currentPatch); delete heldVoices[note];
   sendMsg({t:'note',note,on:false});
 }
-$('octDown').onclick=()=>{ if(octave>1){ octave--; buildKeys(); } };
-$('octUp').onclick=()=>{ if(octave<7){ octave++; buildKeys(); } };
+$('octDown').onclick=()=>{ if(octave>1){ octave--; buildKeys(); lsSet('octave',octave); } };
+$('octUp').onclick=()=>{ if(octave<7){ octave++; buildKeys(); lsSet('octave',octave); } };
 
 // ---------- Controls screen ----------
 const PRESETS={
@@ -372,6 +381,7 @@ function applyFromSliders(){
     s:+$('sS').value, r:+$('sR').value, vol:+$('sVol').value,
   };
   updateReadouts();
+  lsSet('patch',currentPatch);
   sendMsg({t:'patch',patch:currentPatch});
   schedulePreview();
 }
@@ -382,7 +392,7 @@ document.querySelectorAll('#waveChoices .choice').forEach(b=>{
   b.onclick=()=>{ document.querySelectorAll('#waveChoices .choice').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); applyFromSliders(); };
 });
 ['sRatio','sFm','sA','sD','sS','sR','sVol'].forEach(id=>$(id).addEventListener('input',applyFromSliders));
-setSliders(PRESETS.epiano); currentPatch=PRESETS.epiano;
+setSliders(currentPatch); // reflect whatever was loaded (saved patch, or the default) in the slider UI
 
 document.addEventListener('contextmenu',e=>e.preventDefault());
 </script>
