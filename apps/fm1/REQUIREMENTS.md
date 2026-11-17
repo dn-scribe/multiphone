@@ -29,11 +29,12 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   The preview pitch adopts whichever note was last actually played on
   a Keyboard phone, falling back to A4 if none has (`adr/0004`,
   `adr/0009`, `adr/0015`).
-- [x] Keyboard UI: one row of 13 flat piano-style keys (white/black
-  coloring, not true piano key shapes) spanning an octave + 1, with
-  octave up/down buttons (range octave 1-7). Multi-touch works for
-  free since each key is its own element with its own pointer
-  handlers.
+- [x] Keyboard UI: flat piano-style keys (white/black coloring, not
+  true piano key shapes), with octave up/down buttons (range octave
+  1-7). Multi-touch works for free since each key is its own element
+  with its own pointer handlers. Shows 2 octaves in portrait, 3 in
+  landscape (smaller keys), following device orientation live
+  (`adr/0017`).
 - [x] Controls UI: 4 quick presets (E.Piano, Bell, Bass, Brass), carrier
   waveform picker, and sliders for ratio / FM amount / attack / decay /
   sustain / release / volume. Shows a "now playing" readout driven by
@@ -104,6 +105,23 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   current pattern has looped its configured number of times
   (`adr/0014`). Tempo is shared across the whole song, not saved per
   pattern.
+- [x] **Sequencer, Phase 5 (partial)**: per-step **pitch** (a ◀/▶
+  stepper, C2-C7, in the step detail panel), **tie** (don't retrigger —
+  extend the previous note through this step), and **slide** (glide
+  the previous still-sounding note to this step's pitch instead of
+  retriggering). Chords, parameter locks, and live recording are still
+  not attempted — see `adr/0016` for why pitch specifically unlocked
+  tie/slide but not chords.
+- [x] **Pressable tooltips**: a long press (450ms) on a control that
+  isn't fully explained by its own label shows what it does, without
+  also triggering it on release (`adr/0018`). Covers Sequencer's
+  instrument-cycle, Mute, Solo, ✏️ edit, Play, Save Pattern, Song Mode,
+  pattern ➕, song ◀▶✕, and the Pitch/Ratchet/Chance/Condition section
+  labels; Controls' preview toggle, Save Instrument, carrier-wave
+  buttons, and each ADSR/Ratio/FM-amount slider label. Not added where
+  a hold gesture already means something else (a step's own tap/hold,
+  the Instruments/Patterns library rows, FILL) — those keep their
+  existing inline captions instead.
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -125,17 +143,16 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   that instrument is deleted on Controls while the Sequencer panel
   isn't re-rendered — cosmetic only, playback always falls back safely
   (`adr/0012`).
-- [ ] Sequencer: per-step pitch/melody (every track/step is still the
-  same fixed A4). This is the real prerequisite for ties, slides and
-  chords — see `adr/0013`.
 - [ ] Sequencer: each track's own instrument editable in place
   (ratio/FM/ADSR/wave), not just picked from the saved-instrument
   list.
 - [ ] Sequencer: true continuous per-step velocity, not just the
   binary accent built in Phase 2.
-- [ ] Sequencer Phase 5 (tentative): per-step pitch/melody, ties,
-  slides, chords; parameter locks; live recording by listening for the
-  Keyboard's own `note` messages, with quantize.
+- [ ] Sequencer: chords (a step playing more than one note at once);
+  parameter locks; live recording by listening for the Keyboard's own
+  `note` messages, with quantize (`adr/0016`).
+- [ ] Sequencer: a scale-locked pitch picker (e.g. "stay in C major")
+  instead of raw semitone-by-semitone stepping.
 - [ ] Song: no reordering UI (remove + re-add via ➕ is the current
   workaround), no length limit, no duplicate-name prevention for
   patterns (`adr/0014`).
