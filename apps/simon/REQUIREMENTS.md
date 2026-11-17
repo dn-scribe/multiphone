@@ -18,6 +18,8 @@
   length-clamped before rendering.
 - [x] Game-over screen shows the round reached; host can "Play Again"
   with the same players/button assignment.
+- [x] Installable as its own home-screen app (`manifest.json` + icons);
+  versioned independently in `apps.json` — see root `README.md`.
 
 ## Open questions / possible future work
 - [ ] What should happen if the host disconnects mid-game? (Currently:

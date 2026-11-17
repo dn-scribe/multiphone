@@ -1,7 +1,7 @@
 # 6. No patch persistence in v1
 
 ## Status
-Accepted
+Superseded by `adr/0007-local-storage-persistence.md`
 
 ## Context
 A real patch save/load system (naming, storing, recalling custom

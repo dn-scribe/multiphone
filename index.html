@@ -1,7 +1,12 @@
 <!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Multiphone</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="shared/base.css">
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
@@ -11,17 +16,20 @@ h1{font-size:34px;text-align:center;padding:12px}
 #qrBox{border:3px solid #fff;border-radius:14px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:8px}
 #qrBox p{font-size:15px;color:#ccc;text-align:center}
 #qr img{display:block;width:180px;height:180px;background:#fff;padding:8px;border-radius:8px}
+#verLink{display:block;text-align:center;font-size:13px;color:#888;text-decoration:none;padding:6px}
 </style>
 </head><body><main><h1>Multiphone</h1><div id="apps"></div>
 <div id="qrBox">
   <p>Scan to open this page on another phone</p>
   <div id="qr"></div>
 </div>
+<a id="verLink" href="version.html">v…</a>
 </main>
 <script>
 fetch('apps.json').then(r=>r.json()).then(apps=>{
   apps.forEach(a=>{const l=document.createElement('a');l.className='btn';l.href=a.path;
   l.innerHTML=`${a.icon||''} ${a.title}<small>${a.desc||''}</small>`;document.getElementById('apps').append(l)})})
+fetch('version.json').then(r=>r.json()).then(v=>{document.getElementById('verLink').textContent='v'+v.version})
 try{
   const qr=qrcode(0,'M');
   qr.addData(location.href);

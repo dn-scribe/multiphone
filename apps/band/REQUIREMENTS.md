@@ -13,6 +13,8 @@
 - [x] Large, high-contrast pads; screen wake lock while playing; haptic
   feedback (vibrate) on tap.
 - [x] `index.html#N` deep-links straight into instrument `N`.
+- [x] Installable as its own home-screen app (`manifest.json` + icons);
+  versioned independently in `apps.json` — see root `README.md`.
 
 ## Explicitly out of scope
 - No cross-phone synchronization or networking — by design, see

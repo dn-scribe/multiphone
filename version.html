@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>Multiphone — Versions</title>
+<link rel="stylesheet" href="shared/base.css">
+<style>
+main{padding:16px;display:grid;gap:12px;max-width:600px;margin:auto}
+h1{font-size:30px;text-align:center;padding:12px}
+p.hint{text-align:center;font-size:15px;color:#ccc}
+.row{display:flex;justify-content:space-between;align-items:center;border:3px solid #fff;border-radius:14px;padding:14px 16px}
+.row .ver{font-weight:800;font-family:ui-monospace,monospace}
+.hub{border-color:#ccc}
+</style>
+</head><body><main>
+<h1>Versions</h1>
+<p class="hint">Each app is versioned independently (semantic versioning).
+A version only changes when that app's requirements or behavior change
+— see each app's <code>REQUIREMENTS.md</code> and <code>adr/</code> for why.</p>
+<div id="rows"></div>
+<p class="hint"><a href="./">◀ Back to Multiphone</a></p>
+</main>
+<script>
+Promise.all([fetch('version.json').then(r=>r.json()), fetch('apps.json').then(r=>r.json())])
+  .then(([hub,apps])=>{
+    const rows=document.getElementById('rows');
+    const hubRow=document.createElement('div'); hubRow.className='row hub';
+    hubRow.innerHTML=`<span>📱 Multiphone (hub)</span><span class="ver">v${hub.version}</span>`;
+    rows.appendChild(hubRow);
+    apps.forEach(a=>{
+      const row=document.createElement('div'); row.className='row';
+      row.innerHTML=`<span><a href="${a.path}" style="color:#fff;text-decoration:none">${a.icon||''} ${a.title}</a></span><span class="ver">v${a.version||'0.0.0'}</span>`;
+      rows.appendChild(row);
+    });
+  });
+</script>
+</body></html>

@@ -40,12 +40,21 @@ an FM synth. Inspired by the M-VAVE FM-1 hardware synth and its
   peers (`adr/0005`), so a 3rd phone (e.g. a second Keyboard) can join
   and see the same patch/note traffic — not required, but not blocked
   either.
-- [x] No patch persistence — patches live in memory only and reset on
-  reload; presets are the only "saved" patches (`adr/0006`).
+- [x] Patch and octave persist across reloads via `localStorage`,
+  **per phone only** — no sync between phones, and nothing recoverable
+  if you switch to a different phone (`adr/0007`, supersedes
+  `adr/0006`). It's the user's responsibility to return to the same
+  phone to get a saved patch back.
+- [x] Installable as its own home-screen app (`manifest.json` + icons,
+  `apple-touch-icon` for iOS) — see the root `README.md`'s "Installing
+  an app to a home screen" section for the general pattern.
+- [x] Versioned independently (`apps.json`'s `"version"` field,
+  semantic versioning) — see `/version.html` for every app's current
+  version.
 
 ## Open questions / possible future work
-- [ ] Patch save/load across reloads (e.g. `localStorage`) or shared
-  session patches beyond the 4 built-in presets.
+- [ ] Naming/saving more than one patch, or sharing a patch between
+  phones (today: one unnamed patch remembered per phone).
 - [ ] More than 2 operators / selectable algorithms (closer to a true
   multi-op FM synth), if the 2-op voice feels too thin.
 - [ ] Live-updating already-held notes when a Controls slider moves
