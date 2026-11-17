@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>FM-1 Clone</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="../../shared/multiphone.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  html,body{height:100%;background:#000;color:#fff;font-family:system-ui,-apple-system,sans-serif;overflow:hidden;touch-action:none}
+  .screen{display:none;flex-direction:column;height:100%}
+  .screen.on{display:flex}
+  h1{font-size:30px;text-align:center;padding:14px 8px 4px}
+  p.hint{text-align:center;font-size:15px;color:#ccc;padding:0 20px 10px}
+  .topbar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:3px solid #fff}
+  .topbar a,.topbar button{background:#000;color:#fff;border:3px solid #fff;border-radius:10px;font-size:14px;font-weight:700;padding:7px 10px;text-decoration:none;white-space:nowrap}
+  .spacer{flex:1}
+  .body{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .choice{border:3px solid #fff;border-radius:14px;background:#000;color:#fff;font-size:24px;font-weight:800;
+          display:flex;align-items:center;justify-content:center;min-height:84px;padding:8px;text-align:center}
+  .choice.small{min-height:52px;font-size:16px}
+  .choice.sel{background:#fff;color:#000}
+  .choice:active{background:#fff;color:#000}
+  input.code{display:block;width:100%;font-size:40px;letter-spacing:10px;text-align:center;font-weight:800;
+             background:#000;color:#fff;border:3px solid #fff;border-radius:14px;padding:14px;text-transform:uppercase}
+  .big{display:block;width:100%;border:3px solid #fff;border-radius:14px;background:#000;color:#fff;
+       font-size:22px;font-weight:800;padding:16px}
+  .big:active{background:#fff;color:#000}
+  .big[disabled]{opacity:.35}
+  .err{color:#ff5252;text-align:center;font-size:16px;min-height:22px}
+  .ctlLabel{font-size:14px;color:#ccc;display:flex;justify-content:space-between;padding-top:4px}
+  input[type=range]{width:100%;height:34px;accent-color:#fff;background:transparent}
+  #kbArea{flex:1;display:flex;flex-direction:column;min-height:0}
+  .octRow{display:flex;justify-content:center;align-items:center;gap:10px;padding:6px}
+  .octBtn{background:#000;color:#fff;border:3px solid #fff;border-radius:10px;font-size:16px;font-weight:700;padding:8px 14px}
+  .octBtn:active{background:#fff;color:#000}
+  #octLabel{font-weight:800;font-size:16px;min-width:64px;text-align:center}
+  #keys{flex:1;display:flex;min-height:0}
+  .key{flex:1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;
+       font-size:13px;font-weight:700;border-right:2px solid #000}
+  .key:last-child{border-right:none}
+  .key.white{background:#fff;color:#000}
+  .key.blk{background:#000;color:#fff;border:2px solid #fff}
+  .key.on{background:#00e5ff !important;color:#000 !important}
+  #nowPlaying{font-size:20px;font-weight:800;min-height:28px}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:10}
+  .overlay.on{display:flex}
+  .overlay img{background:#fff;padding:8px;border-radius:8px;width:180px;height:180px}
+  .overlay p{font-size:16px;color:#ccc}
+</style>
+</head>
+<body>
+
+<div class="screen on" id="screen-role">
+  <div class="topbar"><a href="../../">◀ Home</a></div>
+  <div class="body">
+    <h1>FM-1 Clone</h1>
+    <p class="hint">Two phones, one tiny FM synth. One phone is the Keyboard, the other is the Controls. One phone hosts, the other joins with a room code.</p>
+    <div class="grid">
+      <button class="choice" id="btnHost">HOST</button>
+      <button class="choice" id="btnJoin">JOIN</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="screen-join">
+  <div class="topbar"><button id="joinBack">◀ Back</button></div>
+  <div class="body">
+    <h1>Join</h1>
+    <p class="hint">Enter the 4-letter room code shown on the other phone.</p>
+    <input class="code" id="joinCode" maxlength="4" autocapitalize="characters" autocomplete="off" inputmode="text">
+    <button class="big" id="joinGo">Continue</button>
+    <div class="err" id="joinErr"></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-instrument">
+  <div class="topbar"><button id="instrBack">◀ Back</button></div>
+  <div class="body">
+    <h1>This Phone Is</h1>
+    <p class="hint">Pick what this phone does. The other phone should pick the other role.</p>
+    <div class="grid" id="instrChoices">
+      <button class="choice" data-r="keyboard">🎹<br>Keyboard</button>
+      <button class="choice" data-r="controls">🎛️<br>Controls</button>
+    </div>
+    <button class="big" id="instrGo" disabled>Continue</button>
+    <div class="err" id="instrErr"></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-keyboard">
+  <div class="topbar">
+    <button id="roomPillKb">Room: ----</button>
+    <div class="spacer"></div>
+    <div id="statusKb" style="font-size:12px;color:#aaa"></div>
+    <a href="../../">Home</a>
+  </div>
+  <div id="kbArea">
+    <div class="octRow">
+      <button class="octBtn" id="octDown">◀ Oct</button>
+      <div id="octLabel">Oct 4</div>
+      <button class="octBtn" id="octUp">Oct ▶</button>
+    </div>
+    <div id="keys"></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-controls">
+  <div class="topbar">
+    <button id="roomPillCt">Room: ----</button>
+    <div class="spacer"></div>
+    <div id="statusCt" style="font-size:12px;color:#aaa"></div>
+    <a href="../../">Home</a>
+  </div>
+  <div class="body">
+    <p id="nowPlaying">—</p>
+    <div class="grid" id="presetChoices" style="grid-template-columns:repeat(4,1fr)">
+      <button class="choice small" data-p="epiano">E.Piano</button>
+      <button class="choice small" data-p="bell">Bell</button>
+      <button class="choice small" data-p="bass">Bass</button>
+      <button class="choice small" data-p="brass">Brass</button>
+    </div>
+    <label class="ctlLabel">Carrier wave</label>
+    <div class="grid" id="waveChoices" style="grid-template-columns:repeat(4,1fr)">
+      <button class="choice small" data-w="sine">Sine</button>
+      <button class="choice small" data-w="triangle">Tri</button>
+      <button class="choice small" data-w="square">Square</button>
+      <button class="choice small" data-w="sawtooth">Saw</button>
+    </div>
+    <label class="ctlLabel">Ratio <span id="vRatio"></span></label>
+    <input type="range" id="sRatio" min="0.25" max="8" step="0.25">
+    <label class="ctlLabel">FM amount <span id="vFm"></span></label>
+    <input type="range" id="sFm" min="0" max="10" step="0.1">
+    <label class="ctlLabel">Attack <span id="vA"></span></label>
+    <input type="range" id="sA" min="0" max="2" step="0.01">
+    <label class="ctlLabel">Decay <span id="vD"></span></label>
+    <input type="range" id="sD" min="0" max="2" step="0.01">
+    <label class="ctlLabel">Sustain <span id="vS"></span></label>
+    <input type="range" id="sS" min="0" max="1" step="0.01">
+    <label class="ctlLabel">Release <span id="vR"></span></label>
+    <input type="range" id="sR" min="0" max="3" step="0.01">
+    <label class="ctlLabel">Volume <span id="vVol"></span></label>
+    <input type="range" id="sVol" min="0" max="1" step="0.01">
+  </div>
+</div>
+
+<div class="overlay" id="qrOverlay">
+  <p>Scan to join this room</p>
+  <div id="qrImg"></div>
+  <button class="big" id="qrClose" style="max-width:200px">Close</button>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const show=id=>{document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));$(id).classList.add('on')};
+
+// ---------- Audio: 2-operator FM synth ----------
+let ctx,master;
+function audio(){
+  if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const comp=ctx.createDynamicsCompressor(); master=ctx.createGain(); master.gain.value=0.8;
+    master.connect(comp); comp.connect(ctx.destination); }
+  if(ctx.state==='suspended') ctx.resume();
+  return ctx;
+}
+function noteToFreq(n){ return 440*Math.pow(2,(n-69)/12); }
+function triggerVoice(patch,freq){
+  audio();
+  const now=ctx.currentTime;
+  const mod=ctx.createOscillator(); mod.type='sine'; mod.frequency.setValueAtTime(freq*patch.ratio,now);
+  const modGain=ctx.createGain(); modGain.gain.setValueAtTime(freq*patch.fm,now);
+  const carrier=ctx.createOscillator(); carrier.type=patch.wave; carrier.frequency.setValueAtTime(freq,now);
+  mod.connect(modGain); modGain.connect(carrier.frequency);
+  const amp=ctx.createGain(); amp.gain.setValueAtTime(0.0001,now);
+  carrier.connect(amp); amp.connect(master);
+  const peak=0.28*patch.vol;
+  amp.gain.exponentialRampToValueAtTime(Math.max(0.0001,peak),now+Math.max(0.002,patch.a));
+  amp.gain.exponentialRampToValueAtTime(Math.max(0.0001,peak*Math.max(0.01,patch.s)),now+patch.a+patch.d);
+  mod.start(now); carrier.start(now);
+  return {mod,carrier,amp};
+}
+function releaseVoice(v,patch){
+  const now=ctx.currentTime;
+  v.amp.gain.cancelScheduledValues(now);
+  v.amp.gain.setValueAtTime(Math.max(0.0001,v.amp.gain.value),now);
+  v.amp.gain.exponentialRampToValueAtTime(0.0001,now+Math.max(0.03,patch.r));
+  const stopAt=now+patch.r+0.08;
+  v.mod.stop(stopAt); v.carrier.stop(stopAt);
+}
+let currentPatch={wave:'sine',ratio:1,fm:2,a:0.01,d:0.5,s:0.4,r:0.4,vol:0.8};
+const heldVoices={}; // note -> voice, for the keyboard's own real notes
+let previewVoice=null, previewTimer=null;
+function stopPreview(){ if(previewVoice){ releaseVoice(previewVoice,currentPatch); previewVoice=null; } }
+function schedulePreview(){
+  clearTimeout(previewTimer);
+  previewTimer=setTimeout(()=>{ stopPreview(); previewVoice=triggerVoice(currentPatch,440); },40);
+}
+
+let wakeLock=null;
+async function keepAwake(){try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')keepAwake()});
+
+// ---------- Setup wizard ----------
+let netRole=null, roomCode='', hostCode='', instrumentRole=null;
+
+$('joinCode').addEventListener('input',()=>{
+  $('joinCode').value=$('joinCode').value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);
+});
+$('btnHost').onclick=()=>{audio();keepAwake();netRole='host';show('screen-instrument')};
+$('btnJoin').onclick=()=>{audio();keepAwake();netRole='join';show('screen-join')};
+$('joinBack').onclick=()=>show('screen-role');
+$('joinGo').onclick=()=>{
+  const v=$('joinCode').value.trim().toUpperCase();
+  if(!/^[A-Z]{4}$/.test(v)){$('joinErr').textContent='Enter the 4-letter code (letters only).';return}
+  roomCode=v; $('joinErr').textContent=''; show('screen-instrument');
+};
+
+// A link such as index.html?room=ABCD joins that room directly (e.g. scanned from the other phone's QR code).
+(function(){
+  const r=(new URLSearchParams(location.search).get('room')||'').toUpperCase();
+  if(/^[A-Z]{4}$/.test(r)){ audio(); keepAwake(); netRole='join'; roomCode=r; show('screen-instrument'); }
+})();
+
+$('instrBack').onclick=()=>show(netRole==='host'?'screen-role':'screen-join');
+document.querySelectorAll('#instrChoices .choice').forEach(b=>{
+  b.onclick=()=>{document.querySelectorAll('#instrChoices .choice').forEach(x=>x.classList.remove('sel'));
+    b.classList.add('sel'); instrumentRole=b.dataset.r; $('instrGo').disabled=false};
+});
+$('instrGo').onclick=()=>{
+  $('instrGo').disabled=true; $('instrErr').textContent='';
+  if(netRole==='host') startHost(); else startClient();
+};
+
+// ---------- Networking (shared/multiphone.js) ----------
+let room,myId,isHost=false;
+let peers={}; // id -> {role}
+
+function startHost(){
+  isHost=true;
+  room=Multiphone.host({
+    appId:'fm1',
+    onReady:(code,id)=>{ hostCode=code; myId=id; peers[myId]={role:instrumentRole}; enterInstrument(); broadcastRoster(); },
+    onPeerJoin:(id,data)=>{ peers[id]={role:data.role}; broadcastRoster(); },
+    onPeerLeave:(id)=>{ delete peers[id]; broadcastRoster(); },
+    onMessage:(msg,fromId)=>{
+      if(fromId!==myId){ room.broadcast(msg); return; } // relay any client message to everyone (incl. loopback to self)
+      handleMessage(msg);
+    },
+    onError:(e)=>{ $('instrErr').textContent='Could not start the room. Check your connection and try again.'; $('instrGo').disabled=false; },
+  });
+}
+function startClient(){
+  isHost=false;
+  room=Multiphone.join({
+    appId:'fm1', code:roomCode, joinData:{role:instrumentRole},
+    onOpen:(id)=>{ myId=id; enterInstrument(); },
+    onMessage:handleMessage,
+    onClose:()=>{ if($('screen-keyboard').classList.contains('on')||$('screen-controls').classList.contains('on')){
+      alert('Lost connection to the other phone.'); location.reload(); } },
+    onError:(e)=>{ $('instrErr').textContent='Could not find that room. Check the code and try again.'; $('instrGo').disabled=false; },
+  });
+}
+function broadcastRoster(){ if(isHost) room.broadcast({t:'roster',peers}); }
+
+function handleMessage(msg){
+  switch(msg.t){
+    case 'roster': peers=msg.peers; updateStatus(); break;
+    case 'patch': currentPatch=msg.patch; break;
+    case 'note': if(instrumentRole==='controls') showNowPlaying(msg.note,msg.on); break;
+  }
+}
+
+function enterInstrument(){
+  const code=roomCode||hostCode;
+  $('roomPillKb').textContent='Room: '+code;
+  $('roomPillCt').textContent='Room: '+code;
+  if(instrumentRole==='keyboard'){ buildKeys(); show('screen-keyboard'); }
+  else { show('screen-controls'); }
+  updateStatus();
+}
+function updateStatus(){
+  const others=Object.entries(peers).filter(([id])=>id!==myId).map(([,p])=>p.role);
+  const label = others.length ? ('connected: '+others.join(', ')) : 'playing solo';
+  $('statusKb').textContent=label; $('statusCt').textContent=label;
+}
+function showNowPlaying(note,on){
+  const NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  $('nowPlaying').textContent = on ? (NAMES[note%12]+Math.floor(note/12-1)) : '—';
+}
+function sendMsg(msg){ if(isHost) room.broadcast(msg); else room.send(msg); }
+
+// ---------- Room QR overlay ----------
+function openQr(){
+  const code=roomCode||hostCode;
+  try{
+    const url=location.origin+location.pathname+'?room='+code;
+    const qr=qrcode(0,'M'); qr.addData(url); qr.make();
+    $('qrImg').innerHTML=qr.createImgTag(4,6);
+    $('qrOverlay').classList.add('on');
+  }catch(e){}
+}
+$('roomPillKb').onclick=openQr; $('roomPillCt').onclick=openQr;
+$('qrClose').onclick=()=>$('qrOverlay').classList.remove('on');
+
+// ---------- Keyboard screen ----------
+const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+let octave=4;
+function buildKeys(){
+  $('octLabel').textContent='Oct '+octave;
+  const keys=$('keys'); keys.innerHTML='';
+  for(let i=0;i<13;i++){
+    const name=NOTE_NAMES[i%12];
+    const midi=(octave+1)*12+i; // C4 = MIDI 60
+    const el=document.createElement('div');
+    el.className='key '+(name.includes('#')?'blk':'white');
+    el.textContent=name;
+    el.dataset.note=midi;
+    el.addEventListener('pointerdown',e=>{ e.preventDefault(); noteOn(midi,el); });
+    const off=()=>noteOff(midi,el);
+    el.addEventListener('pointerup',off); el.addEventListener('pointerleave',off); el.addEventListener('pointercancel',off);
+    keys.appendChild(el);
+  }
+}
+function noteOn(note,el){
+  if(heldVoices[note]) return;
+  el&&el.classList.add('on');
+  heldVoices[note]=triggerVoice(currentPatch,noteToFreq(note));
+  navigator.vibrate?.(10);
+  sendMsg({t:'note',note,on:true});
+}
+function noteOff(note,el){
+  const v=heldVoices[note]; if(!v) return;
+  el&&el.classList.remove('on');
+  releaseVoice(v,currentPatch); delete heldVoices[note];
+  sendMsg({t:'note',note,on:false});
+}
+$('octDown').onclick=()=>{ if(octave>1){ octave--; buildKeys(); } };
+$('octUp').onclick=()=>{ if(octave<7){ octave++; buildKeys(); } };
+
+// ---------- Controls screen ----------
+const PRESETS={
+  epiano:{wave:'sine',ratio:1,fm:1.2,a:0.01,d:0.8,s:0.3,r:0.6,vol:0.8},
+  bell:{wave:'sine',ratio:3.5,fm:4,a:0.002,d:1.5,s:0,r:2.0,vol:0.7},
+  bass:{wave:'sine',ratio:1,fm:0.8,a:0.003,d:0.3,s:0.6,r:0.2,vol:0.9},
+  brass:{wave:'sawtooth',ratio:1,fm:3,a:0.08,d:0.2,s:0.8,r:0.3,vol:0.75},
+};
+function setSliders(p){
+  $('sRatio').value=p.ratio; $('sFm').value=p.fm; $('sA').value=p.a; $('sD').value=p.d;
+  $('sS').value=p.s; $('sR').value=p.r; $('sVol').value=p.vol;
+  document.querySelectorAll('#waveChoices .choice').forEach(b=>b.classList.toggle('sel',b.dataset.w===p.wave));
+  updateReadouts();
+}
+function updateReadouts(){
+  $('vRatio').textContent=(+$('sRatio').value).toFixed(2);
+  $('vFm').textContent=(+$('sFm').value).toFixed(1);
+  $('vA').textContent=(+$('sA').value).toFixed(2)+'s';
+  $('vD').textContent=(+$('sD').value).toFixed(2)+'s';
+  $('vS').textContent=(+$('sS').value).toFixed(2);
+  $('vR').textContent=(+$('sR').value).toFixed(2)+'s';
+  $('vVol').textContent=Math.round((+$('sVol').value)*100)+'%';
+}
+function applyFromSliders(){
+  currentPatch={
+    wave: document.querySelector('#waveChoices .choice.sel')?.dataset.w || 'sine',
+    ratio:+$('sRatio').value, fm:+$('sFm').value, a:+$('sA').value, d:+$('sD').value,
+    s:+$('sS').value, r:+$('sR').value, vol:+$('sVol').value,
+  };
+  updateReadouts();
+  sendMsg({t:'patch',patch:currentPatch});
+  schedulePreview();
+}
+document.querySelectorAll('#presetChoices .choice').forEach(b=>{
+  b.onclick=()=>{ setSliders(PRESETS[b.dataset.p]); applyFromSliders(); };
+});
+document.querySelectorAll('#waveChoices .choice').forEach(b=>{
+  b.onclick=()=>{ document.querySelectorAll('#waveChoices .choice').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); applyFromSliders(); };
+});
+['sRatio','sFm','sA','sD','sS','sR','sVol'].forEach(id=>$(id).addEventListener('input',applyFromSliders));
+setSliders(PRESETS.epiano); currentPatch=PRESETS.epiano;
+
+document.addEventListener('contextmenu',e=>e.preventDefault());
+</script>
+</body>
+</html>
