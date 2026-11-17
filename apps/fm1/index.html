@@ -51,6 +51,7 @@
   .key.white{background:#fff;color:#000}
   .key.blk{background:#000;color:#fff;border:2px solid #fff}
   .key.on{background:#00e5ff !important;color:#000 !important}
+  .keys.many .key{font-size:10px;padding-bottom:6px}
   .nowPlaying{font-size:18px;font-weight:800;min-height:26px;text-align:center;padding:4px}
   .instrumentGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px}
   .seqTransport{display:flex;align-items:center;gap:10px}
@@ -177,6 +178,18 @@ function releaseVoice(v,patch){
   const stopAt=now+patch.r+0.08;
   v.mod.stop(stopAt); v.carrier.stop(stopAt);
 }
+// Glides an already-sounding voice to a new pitch instead of retriggering
+// it - used for the Sequencer's per-step "slide" (adr/0016). Only makes
+// sense on a voice that's still actually playing.
+function slideVoiceToFreq(v,patch,newFreq,durationMs){
+  const now=ctx.currentTime, t=now+Math.max(0.02,durationMs/1000);
+  v.carrier.frequency.cancelScheduledValues(now);
+  v.carrier.frequency.setValueAtTime(v.carrier.frequency.value,now);
+  v.carrier.frequency.linearRampToValueAtTime(newFreq,t);
+  v.mod.frequency.cancelScheduledValues(now);
+  v.mod.frequency.setValueAtTime(v.mod.frequency.value,now);
+  v.mod.frequency.linearRampToValueAtTime(newFreq*patch.ratio,t);
+}
 const DEFAULT_PATCH={wave:'sine',ratio:1,fm:2,a:0.01,d:0.5,s:0.4,r:0.4,vol:0.8};
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const PRESETS={
@@ -208,6 +221,51 @@ function resolveInstrument(key){
   return allInstruments().find(i=>i.key===key) || {key:'preset:epiano',label:PRESET_LABELS.epiano,patch:PRESETS.epiano};
 }
 
+// Press-and-hold tooltips: this is a touch screen, there's no hover, so
+// "pressable" tooltips use the same hold gesture already used elsewhere in
+// this app (e.g. a step's accent). One shared bubble is reused for all of
+// them. attachTooltip() replaces a plain onclick: it calls onTap() on a
+// normal tap, but on a long press (450ms) shows `text` instead and
+// swallows that tap, so looking up what a control does never also
+// triggers it.
+let tooltipEl=null;
+function ensureTooltipEl(){
+  if(tooltipEl) return tooltipEl;
+  tooltipEl=document.createElement('div');
+  tooltipEl.style.cssText='position:fixed;z-index:999;background:#fff;color:#000;font-size:13px;'
+    +'font-weight:700;padding:8px 12px;border-radius:8px;max-width:240px;text-align:center;'
+    +'pointer-events:none;display:none;box-shadow:0 2px 14px rgba(0,0,0,.6)';
+  document.body.appendChild(tooltipEl);
+  return tooltipEl;
+}
+function showTooltip(anchorEl,text){
+  const t=ensureTooltipEl();
+  t.textContent=text; t.style.display='block';
+  t.style.maxWidth=Math.min(240,window.innerWidth-20)+'px';
+  const r=anchorEl.getBoundingClientRect();
+  const tw=t.offsetWidth, th=t.offsetHeight;
+  let left=r.left+r.width/2-tw/2;
+  left=Math.max(8,Math.min(left,window.innerWidth-tw-8));
+  let top=r.top-th-8;
+  if(top<4) top=r.bottom+8;
+  t.style.left=left+'px'; t.style.top=top+'px';
+}
+function hideTooltip(){ if(tooltipEl) tooltipEl.style.display='none'; }
+function attachTooltip(el,text,onTap){
+  let timer=null, shown=false;
+  el.addEventListener('pointerdown',e=>{
+    e.preventDefault(); shown=false;
+    timer=setTimeout(()=>{ shown=true; showTooltip(el,text); navigator.vibrate?.(8); },450);
+  });
+  const release=()=>{ clearTimeout(timer); if(shown){ hideTooltip(); shown=false; } };
+  el.addEventListener('pointerup',()=>{
+    clearTimeout(timer);
+    if(shown){ hideTooltip(); shown=false; } else { onTap&&onTap(); }
+  });
+  el.addEventListener('pointerleave',release);
+  el.addEventListener('pointercancel',release);
+}
+
 let wakeLock=null;
 async function keepAwake(){try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')keepAwake()});
@@ -230,10 +288,17 @@ function createKeyboardPanel(el,room){
   let octave=lsGet('octave',4);
   let patch=lsGet('patch',null)||DEFAULT_PATCH;
   const held={};
+  // Portrait ("tall", phone not tilted) has less width per key, so it shows
+  // fewer octaves at a normal key size; landscape has more width to spend,
+  // so it shows one more octave, sized down a bit so they still all fit.
+  const landscapeQuery=window.matchMedia('(orientation: landscape)');
+  function octaveCount(){ return landscapeQuery.matches?3:2; }
   function render(){
     q('.octLabel').textContent='Oct '+octave;
     const keysEl=q('.keys'); keysEl.innerHTML='';
-    for(let i=0;i<13;i++){
+    const count=octaveCount();
+    keysEl.classList.toggle('many',count>2);
+    for(let i=0;i<count*12+1;i++){
       const name=NOTE_NAMES[i%12];
       const midi=(octave+1)*12+i; // C4 = MIDI 60
       const k=document.createElement('div');
@@ -245,6 +310,7 @@ function createKeyboardPanel(el,room){
       keysEl.appendChild(k);
     }
   }
+  landscapeQuery.addEventListener('change',render);
   function noteOn(note,k){
     if(held[note]) return;
     k.classList.add('on');
@@ -281,19 +347,19 @@ function createControlsPanel(el,room){
         <button class="choice small" type="button" data-w="square">Square</button>
         <button class="choice small" type="button" data-w="sawtooth">Saw</button>
       </div>
-      <label class="ctlLabel">Ratio <span class="vRatio"></span></label>
+      <label class="ctlLabel lblRatio">Ratio ⓘ <span class="vRatio"></span></label>
       <input type="range" class="sRatio" min="0.25" max="8" step="0.25">
-      <label class="ctlLabel">FM amount <span class="vFm"></span></label>
+      <label class="ctlLabel lblFm">FM amount ⓘ <span class="vFm"></span></label>
       <input type="range" class="sFm" min="0" max="10" step="0.1">
-      <label class="ctlLabel">Attack <span class="vA"></span></label>
+      <label class="ctlLabel lblA">Attack ⓘ <span class="vA"></span></label>
       <input type="range" class="sA" min="0" max="2" step="0.01">
-      <label class="ctlLabel">Decay <span class="vD"></span></label>
+      <label class="ctlLabel lblD">Decay ⓘ <span class="vD"></span></label>
       <input type="range" class="sD" min="0" max="2" step="0.01">
-      <label class="ctlLabel">Sustain <span class="vS"></span></label>
+      <label class="ctlLabel lblS">Sustain ⓘ <span class="vS"></span></label>
       <input type="range" class="sS" min="0" max="1" step="0.01">
-      <label class="ctlLabel">Release <span class="vR"></span></label>
+      <label class="ctlLabel lblR">Release ⓘ <span class="vR"></span></label>
       <input type="range" class="sR" min="0" max="3" step="0.01">
-      <label class="ctlLabel">Volume <span class="vVol"></span></label>
+      <label class="ctlLabel lblVol">Volume ⓘ <span class="vVol"></span></label>
       <input type="range" class="sVol" min="0" max="1" step="0.01">
     </div>`;
   const q=sel=>el.querySelector(sel);
@@ -358,19 +424,29 @@ function createControlsPanel(el,room){
       wrap.appendChild(b);
     });
   }
-  q('.previewBtn').onclick=()=>setPreviewLooping(!previewLoopTimer);
-  q('.saveInstrumentBtn').onclick=()=>{
+  attachTooltip(q('.previewBtn'),'Loops a short preview of the current sound so you can hear changes live, without re-tapping.',
+    ()=>setPreviewLooping(!previewLoopTimer));
+  attachTooltip(q('.saveInstrumentBtn'),'Save the current sound with a name, so you (and Sequencer tracks) can pick it again later.',()=>{
     const name=(prompt('Name this instrument:')||'').trim().slice(0,24);
     if(!name) return;
     const list=loadCustomInstruments();
     list.push({id:Date.now()+'-'+Math.random().toString(36).slice(2,6),name,patch:Object.assign({},patch)});
     saveCustomInstruments(list);
     renderInstruments();
-  };
+  });
   el.querySelectorAll('.waveChoices .choice').forEach(b=>{
-    b.onclick=()=>{ el.querySelectorAll('.waveChoices .choice').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); apply(); };
+    attachTooltip(b,'The carrier wave sets the basic timbre of the tone before FM shapes it.',()=>{
+      el.querySelectorAll('.waveChoices .choice').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); apply();
+    });
   });
   ['.sRatio','.sFm','.sA','.sD','.sS','.sR','.sVol'].forEach(sel=>q(sel).addEventListener('input',apply));
+  attachTooltip(q('.lblRatio'),'Modulator frequency as a multiple of the note\'s pitch. Whole numbers sound more musical/bell-like; others sound more metallic.');
+  attachTooltip(q('.lblFm'),'FM amount: how much the modulator bends the carrier\'s pitch each cycle - higher means a brighter, more metallic/complex tone.');
+  attachTooltip(q('.lblA'),'Attack: how long the sound takes to reach full volume after a note starts.');
+  attachTooltip(q('.lblD'),'Decay: how long the sound takes to fall from full volume down to the sustain level.');
+  attachTooltip(q('.lblS'),'Sustain: the volume level held for as long as a note keeps playing, after attack and decay.');
+  attachTooltip(q('.lblR'),'Release: how long the sound takes to fade out after a note ends.');
+  attachTooltip(q('.lblVol'),'Overall volume of this instrument.');
   room.onMessage(msg=>{
     if(msg.t==='patch'){ patch=msg.patch; lsSet('patch',patch); setSliders(patch); }
     else if(msg.t==='note'){
@@ -419,13 +495,13 @@ function createSequencerPanel(el,room){
       <div class="seqTracks"></div>
     </div>`;
   const q=sel=>el.querySelector(sel);
-  const SEQ_NOTE=69; // A4 - every active step plays this one pitch (no per-step melody yet)
+  const DEFAULT_NOTE=69; // A4 - what every step used to play before per-step pitch (adr/0016)
   const TRACK_DEFAULT_KEYS=['preset:epiano','preset:bass','preset:bell','preset:brass'];
   const RATCHETS=[1,2,3,4];
   const CHANCES=[100,75,50,25];
   const CONDITIONS=[['all','All'],['1:2','1:2'],['2:2','2:2'],['fill','Fill']];
 
-  function newStep(){ return {on:false,accent:false,ratchet:1,chance:100,condition:'all'}; }
+  function newStep(){ return {on:false,accent:false,ratchet:1,chance:100,condition:'all',note:DEFAULT_NOTE,tie:false,slide:false}; }
   function newSteps(n){ return Array.from({length:n},newStep); }
   function resizeSteps(steps,n){
     steps=Array.isArray(steps)?steps:[];
@@ -444,7 +520,10 @@ function createSequencerPanel(el,room){
     tracks.forEach(t=>{
       if(!t.instrumentKey) t.instrumentKey='preset:'+(t.preset||'epiano'); // migrate Phase 2 saves
       t.steps=resizeSteps(t.steps,patternLen);
-      t.steps.forEach(s=>{ if(s.ratchet==null) s.ratchet=1; if(s.chance==null) s.chance=100; if(s.condition==null) s.condition='all'; });
+      t.steps.forEach(s=>{
+        if(s.ratchet==null) s.ratchet=1; if(s.chance==null) s.chance=100; if(s.condition==null) s.condition='all';
+        if(s.note==null) s.note=DEFAULT_NOTE; if(s.tie==null) s.tie=false; if(s.slide==null) s.slide=false;
+      });
       t.editIndex=0;
     });
   }
@@ -461,7 +540,8 @@ function createSequencerPanel(el,room){
   function saveSongList(list){ lsSet('song',list); }
   function cloneTrackForSave(t){
     return {instrumentKey:t.instrumentKey,muted:t.muted,solo:t.solo,
-      steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,chance:s.chance,condition:s.condition}))};
+      steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,chance:s.chance,condition:s.condition,
+        note:s.note,tie:s.tie,slide:s.slide}))};
   }
   function snapshotPattern(name){
     return {id:Date.now()+'-'+Math.random().toString(36).slice(2,6),name,patternLen,swing,tracks:tracks.map(cloneTrackForSave)};
@@ -472,7 +552,8 @@ function createSequencerPanel(el,room){
     tracks=p.tracks.map(t=>({
       instrumentKey:t.instrumentKey, muted:t.muted, solo:t.solo,
       steps:resizeSteps(t.steps.map(s=>({on:s.on,accent:s.accent,
-        ratchet:s.ratchet!=null?s.ratchet:1, chance:s.chance!=null?s.chance:100, condition:s.condition||'all'})),patternLen),
+        ratchet:s.ratchet!=null?s.ratchet:1, chance:s.chance!=null?s.chance:100, condition:s.condition||'all',
+        note:s.note!=null?s.note:DEFAULT_NOTE, tie:!!s.tie, slide:!!s.slide})),patternLen),
       editMode:false, editIndex:0,
     }));
     saveTracks();
@@ -498,7 +579,9 @@ function createSequencerPanel(el,room){
       nameBtn.addEventListener('pointerup',()=>{ endHold(); if(!held) applyPattern(p); });
       nameBtn.addEventListener('pointerleave',endHold); nameBtn.addEventListener('pointercancel',endHold);
       const addBtn=document.createElement('button'); addBtn.type='button'; addBtn.className='trackBtn'; addBtn.textContent='➕';
-      addBtn.onclick=()=>{ const song=loadSongList(); song.push({patternId:p.id,repeats:1}); saveSongList(song); renderSong(); };
+      attachTooltip(addBtn,'Add this pattern to the Song, below.',()=>{
+        const song=loadSongList(); song.push({patternId:p.id,repeats:1}); saveSongList(song); renderSong();
+      });
       row.append(nameBtn,addBtn);
       wrap.appendChild(row);
     });
@@ -515,9 +598,15 @@ function createSequencerPanel(el,room){
       const countEl=document.createElement('div'); countEl.className='trackBtn'; countEl.style.pointerEvents='none'; countEl.textContent=entry.repeats+'x';
       const inc=document.createElement('button'); inc.type='button'; inc.className='trackBtn'; inc.textContent='▶';
       const rm=document.createElement('button'); rm.type='button'; rm.className='trackBtn'; rm.textContent='✕';
-      dec.onclick=()=>{ const s=loadSongList(); s[idx].repeats=Math.max(1,s[idx].repeats-1); saveSongList(s); renderSong(); };
-      inc.onclick=()=>{ const s=loadSongList(); s[idx].repeats=Math.min(8,s[idx].repeats+1); saveSongList(s); renderSong(); };
-      rm.onclick=()=>{ const s=loadSongList(); s.splice(idx,1); saveSongList(s); renderSong(); };
+      attachTooltip(dec,'Fewer repeats of this pattern before the Song moves to the next one.',()=>{
+        const s=loadSongList(); s[idx].repeats=Math.max(1,s[idx].repeats-1); saveSongList(s); renderSong();
+      });
+      attachTooltip(inc,'More repeats of this pattern before the Song moves to the next one.',()=>{
+        const s=loadSongList(); s[idx].repeats=Math.min(8,s[idx].repeats+1); saveSongList(s); renderSong();
+      });
+      attachTooltip(rm,'Remove this pattern from the Song.',()=>{
+        const s=loadSongList(); s.splice(idx,1); saveSongList(s); renderSong();
+      });
       row.append(label,dec,countEl,inc,rm);
       wrap.appendChild(row);
     });
@@ -548,16 +637,52 @@ function createSequencerPanel(el,room){
     if(s.chance<100 && Math.random()*100>=s.chance) return false;
     return true;
   }
-  function fireStep(track,s){
+  // How many extra step-durations this note's hold needs, beyond its own
+  // normal short duration, to stay alive long enough for what follows:
+  // every consecutive tied step extends it further (they never retrigger
+  // of their own - tick()'s firing loop skips them entirely), and if the
+  // run ends on a slide step, it extends through exactly that one step
+  // too, since a slide needs THIS voice to still be sounding when its
+  // turn comes, to glide from rather than retrigger.
+  function legatoExtensionSteps(track,si){
+    let n=0, j=(si+1)%track.steps.length;
+    while(j!==si){
+      const nx=track.steps[j];
+      if(nx.on&&nx.tie){ n++; j=(j+1)%track.steps.length; continue; }
+      if(nx.on&&nx.slide){ n++; }
+      break;
+    }
+    return n;
+  }
+  function fireStep(track,s,si){
     const inst=resolveInstrument(track.instrumentKey);
     const basePatch=Object.assign({},inst.patch,{vol:inst.patch.vol*(s.accent?1.0:0.72)});
+    const freq=noteToFreq(s.note);
+    const tieExtra=legatoExtensionSteps(track,si)*baseIntervalMs();
+
+    if(s.slide && track._lastVoice){
+      const v=track._lastVoice;
+      slideVoiceToFreq(v,basePatch,freq,baseIntervalMs()*0.8);
+      room.send({t:'note',note:s.note,on:true});
+      const holdMs=Math.max(20,baseIntervalMs()*0.6)+tieExtra;
+      setTimeout(()=>{
+        if(track._lastVoice===v){ releaseVoice(v,basePatch); track._lastVoice=null; }
+        room.send({t:'note',note:s.note,on:false});
+      },holdMs);
+      return;
+    }
     const n=s.ratchet||1, slice=baseIntervalMs()/n;
     for(let r=0;r<n;r++){
       setTimeout(()=>{
-        const v=triggerVoice(basePatch,noteToFreq(SEQ_NOTE));
-        room.send({t:'note',note:SEQ_NOTE,on:true});
-        const holdMs=Math.max(20,slice*0.6);
-        setTimeout(()=>{ releaseVoice(v,basePatch); room.send({t:'note',note:SEQ_NOTE,on:false}); },holdMs);
+        const v=triggerVoice(basePatch,freq);
+        track._lastVoice=v;
+        room.send({t:'note',note:s.note,on:true});
+        const holdMs=Math.max(20,slice*0.6)+(r===n-1?tieExtra:0);
+        setTimeout(()=>{
+          if(track._lastVoice===v){ releaseVoice(v,basePatch); track._lastVoice=null; }
+          else releaseVoice(v,basePatch);
+          room.send({t:'note',note:s.note,on:false});
+        },holdMs);
       },r*slice);
     }
   }
@@ -598,6 +723,17 @@ function createSequencerPanel(el,room){
     });
     return row;
   }
+  function noteRow(track,s){
+    const row=document.createElement('div'); row.className='octRow';
+    const dec=document.createElement('button'); dec.type='button'; dec.className='octBtn'; dec.textContent='◀';
+    const label=document.createElement('div'); label.className='octLabel';
+    label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1);
+    const inc=document.createElement('button'); inc.type='button'; inc.className='octBtn'; inc.textContent='▶';
+    dec.onclick=()=>{ if(s.note>24){ s.note--; saveTracks(); renderTrackDetail(track); } };
+    inc.onclick=()=>{ if(s.note<108){ s.note++; saveTracks(); renderTrackDetail(track); } };
+    row.append(dec,label,inc);
+    return row;
+  }
   function renderTrackDetail(track){
     const panel=track._detailEl; if(!panel) return;
     panel.innerHTML='';
@@ -606,11 +742,32 @@ function createSequencerPanel(el,room){
     const s=track.steps[track.editIndex];
     const title=document.createElement('div'); title.className='ctlLabel'; title.textContent='Step '+(track.editIndex+1);
     panel.appendChild(title);
-    const rLabel=document.createElement('div'); rLabel.className='ctlLabel'; rLabel.textContent='Ratchet'; panel.appendChild(rLabel);
+    const pLabel=document.createElement('div'); pLabel.className='ctlLabel'; pLabel.textContent='Pitch ⓘ';
+    attachTooltip(pLabel,'This step\'s note. Tie and slide only make sense relative to the step before them.');
+    panel.appendChild(pLabel);
+    panel.appendChild(noteRow(track,s));
+    const tsRow=document.createElement('div'); tsRow.className='grid'; tsRow.style.gridTemplateColumns='repeat(2,1fr)'; tsRow.style.paddingTop='4px';
+    const tieBtn=document.createElement('button'); tieBtn.type='button'; tieBtn.className='choice small'+(s.tie?' sel':'');
+    tieBtn.textContent='Tie: '+(s.tie?'On':'Off');
+    attachTooltip(tieBtn,'Tie: don\'t retrigger here - let the previous note keep ringing through this step instead.',
+      ()=>{ s.tie=!s.tie; saveTracks(); renderTrackDetail(track); });
+    const slideBtn=document.createElement('button'); slideBtn.type='button'; slideBtn.className='choice small'+(s.slide?' sel':'');
+    slideBtn.textContent='Slide: '+(s.slide?'On':'Off');
+    attachTooltip(slideBtn,'Slide: glide from the previous note\'s pitch into this one instead of a hard retrigger.',
+      ()=>{ s.slide=!s.slide; saveTracks(); renderTrackDetail(track); });
+    tsRow.append(tieBtn,slideBtn);
+    panel.appendChild(tsRow);
+    const rLabel=document.createElement('div'); rLabel.className='ctlLabel'; rLabel.textContent='Ratchet ⓘ';
+    attachTooltip(rLabel,'How many times this step re-triggers, evenly spaced within it.');
+    panel.appendChild(rLabel);
     panel.appendChild(pickerRow(track,RATCHETS.map(n=>[n,n+'x']),v=>s.ratchet===v,v=>{ s.ratchet=v; }));
-    const cLabel=document.createElement('div'); cLabel.className='ctlLabel'; cLabel.textContent='Chance'; panel.appendChild(cLabel);
+    const cLabel=document.createElement('div'); cLabel.className='ctlLabel'; cLabel.textContent='Chance ⓘ';
+    attachTooltip(cLabel,'The odds this step actually plays, checked fresh every time the pattern loops around to it.');
+    panel.appendChild(cLabel);
     panel.appendChild(pickerRow(track,CHANCES.map(n=>[n,n+'%']),v=>s.chance===v,v=>{ s.chance=v; }));
-    const kLabel=document.createElement('div'); kLabel.className='ctlLabel'; kLabel.textContent='Condition'; panel.appendChild(kLabel);
+    const kLabel=document.createElement('div'); kLabel.className='ctlLabel'; kLabel.textContent='Condition ⓘ';
+    attachTooltip(kLabel,'All = every loop. 1:2/2:2 = only odd/even-numbered loops. Fill = only while holding the FILL button.');
+    panel.appendChild(kLabel);
     panel.appendChild(pickerRow(track,CONDITIONS,v=>s.condition===v,v=>{ s.condition=v; }));
   }
 
@@ -621,20 +778,26 @@ function createSequencerPanel(el,room){
       const head=document.createElement('div'); head.className='seqTrackHead';
       const instBtn=document.createElement('button'); instBtn.type='button'; instBtn.className='trackBtn presetBtn';
       instBtn.textContent=resolveInstrument(track.instrumentKey).label;
-      instBtn.onclick=()=>{
+      attachTooltip(instBtn,'Tap to cycle this track\'s instrument.',()=>{
         const list=allInstruments(); const idx=list.findIndex(i=>i.key===track.instrumentKey);
         track.instrumentKey=list[(idx+1)%list.length].key;
         instBtn.textContent=resolveInstrument(track.instrumentKey).label; saveTracks();
-      };
+      });
       const muteBtn=document.createElement('button'); muteBtn.type='button'; muteBtn.textContent='M';
       muteBtn.className='trackBtn muteBtn'+(track.muted?' active':'');
-      muteBtn.onclick=()=>{ track.muted=!track.muted; muteBtn.classList.toggle('active',track.muted); saveTracks(); };
+      attachTooltip(muteBtn,'Mute: silences this track, even while Play is running.',()=>{
+        track.muted=!track.muted; muteBtn.classList.toggle('active',track.muted); saveTracks();
+      });
       const soloBtn=document.createElement('button'); soloBtn.type='button'; soloBtn.textContent='S';
       soloBtn.className='trackBtn soloBtn'+(track.solo?' active':'');
-      soloBtn.onclick=()=>{ track.solo=!track.solo; soloBtn.classList.toggle('active',track.solo); saveTracks(); };
+      attachTooltip(soloBtn,'Solo: while any track is soloed, only soloed tracks play - everything else goes quiet, even if not muted.',()=>{
+        track.solo=!track.solo; soloBtn.classList.toggle('active',track.solo); saveTracks();
+      });
       const editBtn=document.createElement('button'); editBtn.type='button'; editBtn.textContent='✏️';
       editBtn.className='trackBtn editBtn'+(track.editMode?' active':'');
-      editBtn.onclick=()=>{ track.editMode=!track.editMode; editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight(); };
+      attachTooltip(editBtn,'Edit mode: tap a step to select it, then set its pitch/tie/slide/ratchet/chance/condition below.',()=>{
+        track.editMode=!track.editMode; editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight();
+      });
       head.append(instBtn,muteBtn,soloBtn,editBtn);
       const stepsRow=document.createElement('div'); stepsRow.className='seqStepsRow';
       track.steps.forEach((s,si)=>{
@@ -673,7 +836,7 @@ function createSequencerPanel(el,room){
     tracks.forEach(track=>{
       const audible=anySolo?track.solo:!track.muted;
       const s=track.steps[stepIndex];
-      if(audible&&s&&s.on&&stepShouldFire(s)) fireStep(track,s);
+      if(audible&&s&&s.on&&!s.tie&&stepShouldFire(s)) fireStep(track,s,stepIndex);
     });
     const delay=delayAfterStep(stepIndex);
     stepIndex=(stepIndex+1)%patternLen;
@@ -699,17 +862,19 @@ function createSequencerPanel(el,room){
     updateCurHighlight();
     updateSongStatus();
   }
-  q('.seqPlay').onclick=()=>{ playing?stop():start(); };
-  q('.savePatternBtn').onclick=()=>{
+  attachTooltip(q('.seqPlay'),'Play or stop the current pattern - or the whole Song, if Song Mode is on.',()=>{ playing?stop():start(); });
+  attachTooltip(q('.savePatternBtn'),'Save the current tracks/steps as a pattern you can reload later or add to a Song.',()=>{
     const name=(prompt('Name this pattern:')||'').trim().slice(0,24);
     if(!name) return;
     const list=loadPatternsList(); list.push(snapshotPattern(name)); savePatternsList(list); renderPatterns();
-  };
+  });
   function refreshSongModeBtn(){
     q('.songModeBtn').textContent='Song Mode: '+(songMode?'On':'Off');
     q('.songModeBtn').classList.toggle('active',songMode);
   }
-  q('.songModeBtn').onclick=()=>{ songMode=!songMode; lsSet('songMode',songMode); refreshSongModeBtn(); updateSongStatus(); };
+  attachTooltip(q('.songModeBtn'),'On: Play runs through your whole Song instead of looping just this one pattern.',()=>{
+    songMode=!songMode; lsSet('songMode',songMode); refreshSongModeBtn(); updateSongStatus();
+  });
   refreshSongModeBtn();
   q('.fillBtn').addEventListener('pointerdown',e=>{ e.preventDefault(); fillActive=true; q('.fillBtn').classList.add('active'); });
   const endFill=()=>{ fillActive=false; q('.fillBtn').classList.remove('active'); };
