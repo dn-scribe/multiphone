@@ -22,9 +22,13 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   or note timing, so there's no playable-note latency (`adr/0004`).
 - [x] Either phone works solo: Keyboard plays with whatever patch it
   last received (or the default preset) even with nobody connected;
-  Controls has a "▶️ Hear it" button to preview the current patch
-  (bounded to a fixed short duration — never sustains forever),
-  with or without a Keyboard phone connected (`adr/0004`, `adr/0009`).
+  Controls has a "▶️ Hear it" / "⏸ Stop Preview" toggle that loops a
+  bounded preview note (never sustains forever) roughly every 700ms,
+  retriggering immediately on every parameter change too, so you can
+  hear a sound while shaping it without re-tapping after every tweak.
+  The preview pitch adopts whichever note was last actually played on
+  a Keyboard phone, falling back to A4 if none has (`adr/0004`,
+  `adr/0009`, `adr/0015`).
 - [x] Keyboard UI: one row of 13 flat piano-style keys (white/black
   coloring, not true piano key shapes) spanning an octave + 1, with
   octave up/down buttons (range octave 1-7). Multi-touch works for
