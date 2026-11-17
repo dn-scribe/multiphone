@@ -53,11 +53,17 @@
   .key.on{background:#00e5ff !important;color:#000 !important}
   .nowPlaying{font-size:18px;font-weight:800;min-height:26px;text-align:center;padding:4px}
   .seqTransport{display:flex;align-items:center;gap:10px}
-  .seqSteps{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;padding-top:6px}
-  .seqStep{aspect-ratio:1;border:3px solid #444;border-radius:10px;background:#000}
+  .seqTrack{border:2px solid #333;border-radius:10px;padding:8px;margin-top:10px}
+  .seqTrackHead{display:flex;gap:6px;margin-bottom:8px}
+  .trackBtn{background:#000;color:#fff;border:2px solid #fff;border-radius:8px;font-size:12px;font-weight:700;padding:6px 8px}
+  .trackBtn.active{background:#fff;color:#000}
+  .presetBtn{flex:1;text-align:left}
+  .seqStepsRow{display:grid;grid-template-columns:repeat(16,1fr);gap:4px}
+  .seqStep{aspect-ratio:1;border:2px solid #444;border-radius:6px;background:#000;position:relative}
   .seqStep.on{background:#fff;border-color:#fff}
   .seqStep.cur{border-color:#00e5ff}
   .seqStep.on.cur{background:#00e5ff}
+  .seqStep.accent::after{content:'';position:absolute;inset:3px;border:2px solid #ff9100;border-radius:4px;pointer-events:none}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:10}
   .overlay.on{display:flex}
   .overlay img{background:#fff;padding:8px;border-radius:8px;width:180px;height:180px}
@@ -176,6 +182,8 @@ const PRESETS={
   bass:{wave:'sine',ratio:1,fm:0.8,a:0.003,d:0.3,s:0.6,r:0.2,vol:0.9},
   brass:{wave:'sawtooth',ratio:1,fm:3,a:0.08,d:0.2,s:0.8,r:0.3,vol:0.75},
 };
+const PRESET_ORDER=['epiano','bell','bass','brass'];
+const PRESET_LABELS={epiano:'E.Piano',bell:'Bell',bass:'Bass',brass:'Brass'};
 // Local-only persistence: remembered on THIS phone's browser only, never
 // synced to the other phone/panel (that's what room messages are for).
 // Reloading a different phone starts fresh — see adr/0007.
@@ -318,11 +326,13 @@ function createControlsPanel(el,room){
   });
   setSliders(patch);
 }
-// Phase 1 step sequencer: one track, 16 steps, one fixed pitch per active
-// step (per-step pitch/velocity/etc. are later phases - see REQUIREMENTS).
-// Timing uses a plain setInterval re-armed on BPM change; it's not
-// sample-accurate lookahead scheduling, which is more than this first
-// version needs (see adr/0010).
+// Phase 2 step sequencer: 4 tracks (toward Felucca's 4), each with its own
+// preset, a shared pattern length (16/32/64) and tempo/swing, per-step
+// accent, and per-track mute/solo. Every pitch is still fixed (A4) -
+// per-step pitch/melody is not in scope yet (see adr/0011). Timing is a
+// self-rescheduling setTimeout chain (not sample-accurate lookahead
+// scheduling - see adr/0010) so swing's per-step variable delay is easy to
+// express; still fine for this app's needs.
 function createSequencerPanel(el,room){
   el.innerHTML=`
     <div class="body">
@@ -331,59 +341,148 @@ function createSequencerPanel(el,room){
       </div>
       <label class="ctlLabel">Tempo <span class="vBpm"></span></label>
       <input type="range" class="sBpm" min="60" max="200" step="1">
-      <div class="seqSteps"></div>
+      <label class="ctlLabel">Swing <span class="vSwing"></span></label>
+      <input type="range" class="sSwing" min="50" max="75" step="1">
+      <label class="ctlLabel">Pattern length</label>
+      <div class="grid lenChoices" style="grid-template-columns:repeat(3,1fr)">
+        <button class="choice small" type="button" data-len="16">16</button>
+        <button class="choice small" type="button" data-len="32">32</button>
+        <button class="choice small" type="button" data-len="64">64</button>
+      </div>
+      <div class="seqTracks"></div>
     </div>`;
   const q=sel=>el.querySelector(sel);
-  const SEQ_NOTE=69; // A4 - every active step plays this one pitch in Phase 1
-  let patch=lsGet('patch',null)||DEFAULT_PATCH;
-  let bpm=lsGet('seqBpm',120);
-  let steps=lsGet('seqSteps',null);
-  if(!Array.isArray(steps)||steps.length!==16) steps=new Array(16).fill(false);
-  let playing=false, timer=null, stepIndex=0;
+  const SEQ_NOTE=69; // A4 - every active step plays this one pitch (no per-step melody yet)
+  const TRACK_DEFAULT_PRESETS=['epiano','bass','bell','brass'];
 
-  function intervalMs(){ return 60000/bpm/4; } // steps are 16th notes
-  function renderSteps(){
-    const wrap=q('.seqSteps'); wrap.innerHTML='';
-    steps.forEach((on,i)=>{
-      const b=document.createElement('button');
-      b.type='button';
-      b.className='seqStep'+(on?' on':'')+(playing&&i===stepIndex?' cur':'');
-      b.onclick=()=>{ steps[i]=!steps[i]; lsSet('seqSteps',steps); renderSteps(); };
-      wrap.appendChild(b);
+  function newSteps(n){ return Array.from({length:n},()=>({on:false,accent:false})); }
+  function resizeSteps(steps,n){
+    steps=Array.isArray(steps)?steps:[];
+    if(steps.length===n) return steps;
+    if(steps.length>n) return steps.slice(0,n);
+    return steps.concat(newSteps(n-steps.length));
+  }
+
+  let patternLen=lsGet('seqLen',16);
+  let bpm=lsGet('seqBpm',120);
+  let swing=lsGet('seqSwing',50);
+  let tracks=lsGet('seqTracks',null);
+  if(!Array.isArray(tracks)||tracks.length!==4){
+    tracks=TRACK_DEFAULT_PRESETS.map(preset=>({preset,muted:false,solo:false,steps:newSteps(patternLen)}));
+  } else {
+    tracks.forEach(t=>{ t.steps=resizeSteps(t.steps,patternLen); if(!PRESETS[t.preset]) t.preset='epiano'; });
+  }
+  function saveTracks(){ lsSet('seqTracks',tracks); }
+
+  let playing=false, timer=null, stepIndex=0;
+  let curHighlighters=[]; // refresh() fns for every step button, called each tick
+
+  function baseIntervalMs(){ return 60000/bpm/4; } // a straight 16th note
+  function delayAfterStep(i){
+    // Keeps each on-beat/off-beat PAIR's total duration constant while
+    // skewing the internal split - swing=50 (straight) gives equal halves.
+    const pair=2*baseIntervalMs(), frac=swing/100;
+    return i%2===0 ? pair*frac : pair*(1-frac);
+  }
+
+  function makeStepButton(track,si){
+    const b=document.createElement('button'); b.type='button';
+    let holdTimer=null, held=false;
+    function refresh(){
+      const s=track.steps[si];
+      b.className='seqStep'+(s.on?' on':'')+(s.on&&s.accent?' accent':'')+(playing&&stepIndex===si?' cur':'');
+    }
+    b.addEventListener('pointerdown',e=>{
+      e.preventDefault(); held=false;
+      holdTimer=setTimeout(()=>{ held=true; const s=track.steps[si]; if(s.on){ s.accent=!s.accent; saveTracks(); refresh(); } },350);
+    });
+    const endHold=()=>clearTimeout(holdTimer);
+    b.addEventListener('pointerup',()=>{
+      endHold();
+      if(!held){ const s=track.steps[si]; s.on=!s.on; if(!s.on) s.accent=false; saveTracks(); refresh(); }
+    });
+    b.addEventListener('pointerleave',endHold);
+    b.addEventListener('pointercancel',endHold);
+    refresh();
+    return {el:b,refresh};
+  }
+
+  function renderTracks(){
+    const wrap=q('.seqTracks'); wrap.innerHTML=''; curHighlighters=[];
+    tracks.forEach(track=>{
+      const trackEl=document.createElement('div'); trackEl.className='seqTrack';
+      const head=document.createElement('div'); head.className='seqTrackHead';
+      const presetBtn=document.createElement('button'); presetBtn.type='button'; presetBtn.className='trackBtn presetBtn';
+      presetBtn.textContent=PRESET_LABELS[track.preset];
+      presetBtn.onclick=()=>{
+        track.preset=PRESET_ORDER[(PRESET_ORDER.indexOf(track.preset)+1)%PRESET_ORDER.length];
+        presetBtn.textContent=PRESET_LABELS[track.preset]; saveTracks();
+      };
+      const muteBtn=document.createElement('button'); muteBtn.type='button'; muteBtn.textContent='M';
+      muteBtn.className='trackBtn muteBtn'+(track.muted?' active':'');
+      muteBtn.onclick=()=>{ track.muted=!track.muted; muteBtn.classList.toggle('active',track.muted); saveTracks(); };
+      const soloBtn=document.createElement('button'); soloBtn.type='button'; soloBtn.textContent='S';
+      soloBtn.className='trackBtn soloBtn'+(track.solo?' active':'');
+      soloBtn.onclick=()=>{ track.solo=!track.solo; soloBtn.classList.toggle('active',track.solo); saveTracks(); };
+      head.append(presetBtn,muteBtn,soloBtn);
+      const stepsRow=document.createElement('div'); stepsRow.className='seqStepsRow';
+      track.steps.forEach((s,si)=>{
+        const {el:stepEl,refresh}=makeStepButton(track,si);
+        stepsRow.appendChild(stepEl);
+        curHighlighters.push(refresh);
+      });
+      trackEl.append(head,stepsRow);
+      wrap.appendChild(trackEl);
     });
   }
-  function highlightCurrent(){
-    el.querySelectorAll('.seqStep').forEach((b,i)=>b.classList.toggle('cur',playing&&i===stepIndex));
-  }
+  function updateCurHighlight(){ curHighlighters.forEach(r=>r()); }
+
   function tick(){
-    highlightCurrent();
-    if(steps[stepIndex]){
-      const v=triggerVoice(patch,noteToFreq(SEQ_NOTE));
-      room.send({t:'note',note:SEQ_NOTE,on:true});
-      const holdMs=Math.max(30,intervalMs()*0.6);
-      setTimeout(()=>{ releaseVoice(v,patch); room.send({t:'note',note:SEQ_NOTE,on:false}); },holdMs);
-    }
-    stepIndex=(stepIndex+1)%steps.length;
+    updateCurHighlight();
+    const anySolo=tracks.some(t=>t.solo);
+    tracks.forEach(track=>{
+      const audible=anySolo?track.solo:!track.muted;
+      const s=track.steps[stepIndex];
+      if(audible&&s&&s.on){
+        const base=PRESETS[track.preset]||DEFAULT_PATCH;
+        const patch=Object.assign({},base,{vol:base.vol*(s.accent?1.0:0.72)});
+        const v=triggerVoice(patch,noteToFreq(SEQ_NOTE));
+        room.send({t:'note',note:SEQ_NOTE,on:true});
+        const holdMs=Math.max(30,baseIntervalMs()*0.6);
+        setTimeout(()=>{ releaseVoice(v,patch); room.send({t:'note',note:SEQ_NOTE,on:false}); },holdMs);
+      }
+    });
+    const delay=delayAfterStep(stepIndex);
+    stepIndex=(stepIndex+1)%patternLen;
+    if(playing) timer=setTimeout(tick,delay);
   }
   function start(){
     if(playing) return;
     playing=true; stepIndex=0; q('.seqPlay').textContent='⏸ Stop';
     tick();
-    timer=setInterval(tick,intervalMs());
   }
   function stop(){
-    playing=false; clearInterval(timer); timer=null;
+    playing=false; clearTimeout(timer); timer=null;
     q('.seqPlay').textContent='▶️ Play';
-    highlightCurrent();
+    updateCurHighlight();
   }
   q('.seqPlay').onclick=()=>{ playing?stop():start(); };
   q('.sBpm').value=bpm; q('.vBpm').textContent=bpm+' BPM';
-  q('.sBpm').addEventListener('input',()=>{
-    bpm=+q('.sBpm').value; q('.vBpm').textContent=bpm+' BPM'; lsSet('seqBpm',bpm);
-    if(playing){ clearInterval(timer); timer=setInterval(tick,intervalMs()); }
+  q('.sBpm').addEventListener('input',()=>{ bpm=+q('.sBpm').value; q('.vBpm').textContent=bpm+' BPM'; lsSet('seqBpm',bpm); });
+  q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
+  q('.sSwing').addEventListener('input',()=>{ swing=+q('.sSwing').value; q('.vSwing').textContent=swing+'%'; lsSet('seqSwing',swing); });
+  el.querySelectorAll('.lenChoices .choice').forEach(b=>{
+    b.classList.toggle('sel',+b.dataset.len===patternLen);
+    b.onclick=()=>{
+      patternLen=+b.dataset.len; lsSet('seqLen',patternLen);
+      tracks.forEach(t=>{ t.steps=resizeSteps(t.steps,patternLen); });
+      saveTracks();
+      stepIndex=stepIndex%patternLen;
+      el.querySelectorAll('.lenChoices .choice').forEach(x=>x.classList.toggle('sel',x===b));
+      renderTracks();
+    };
   });
-  room.onMessage(msg=>{ if(msg.t==='patch'){ patch=msg.patch; lsSet('patch',patch); } });
-  renderSteps();
+  renderTracks();
 }
 
 // ---------- Setup wizard ----------
