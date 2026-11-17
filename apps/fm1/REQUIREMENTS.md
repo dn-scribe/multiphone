@@ -61,14 +61,18 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   (`shared/single-phone.js` + `.css`) any future multi-role app can
   reuse the same way.
 - [x] **Sequencer, Phase 1**: a third role. One track, 16 steps, each a
-  plain on/off toggle, all playing the same fixed pitch (A4) with
-  whatever patch this phone has. Tempo slider, Play/Stop, steps+tempo
-  persist via `localStorage` (per phone, same tradeoff as patch/octave
-  persistence). Deliberately minimal — see `adr/0010` for what's
-  phased in next and why a 1:1 clone of Felucca's sequencer (4 tracks,
-  64 steps, per-step chords/ties/accent/slide/chance/ratchets/
-  conditions, parameter locks, song mode, live-record-with-overdub)
-  isn't attempted in one step.
+  plain on/off toggle, all playing the same fixed pitch (A4). Tempo
+  slider, Play/Stop. Deliberately minimal — see `adr/0010`.
+- [x] **Sequencer, Phase 2**: 4 tracks (toward Felucca's 4), each with
+  its own preset (tap the track name to cycle E.Piano/Bell/Bass/Brass);
+  a shared pattern length of 16/32/64 steps; tap a step to toggle
+  on/off, tap-and-hold an *on* step to toggle **accent** (a fixed
+  louder level, not yet a continuous velocity — see open questions);
+  per-track Mute/Solo (solo overrides mute, standard mixing
+  semantics); Swing (50-75%, pair-duration-preserving). Everything
+  persists via `localStorage` per phone. Pitch is still fixed (A4) for
+  every track/step — see `adr/0011` for this and the other scoping
+  calls made while building it.
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -83,16 +87,21 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   latest note from any Keyboard).
 - [ ] Validation/guard rails if multiple phones pick the same role
   (v1: allowed — e.g. two Controls and no Keyboard is possible).
-- [ ] Sequencer Phase 2: multiple tracks (toward Felucca's 4), each
-  with its own preset; variable pattern length (16/32/64); per-step
-  velocity/accent; mute/solo per track; swing.
+- [ ] Sequencer: per-step pitch/melody (every track/step is still the
+  same fixed A4 — never actually in a phase's brief yet, see
+  `adr/0011`).
+- [ ] Sequencer: each track's own preset editable (ratio/FM/ADSR/wave),
+  not just a cycle through the 4 fixed presets.
+- [ ] Sequencer: true continuous per-step velocity, not just the
+  binary accent built in Phase 2.
 - [ ] Sequencer Phase 3: per-step ties/slides/chords/ratchets/chance/
   conditions; parameter locks; pattern save + song mode (chaining
   patterns, like Felucca's up-to-16-section song mode); live recording
   by listening for the Keyboard's own `note` messages, with quantize.
-- [ ] Sequencer timing is a plain `setInterval`, not sample-accurate
-  lookahead scheduling (`adr/0010`) — revisit if later phases make
-  timing precision actually matter (e.g. swing, ratchets).
+- [ ] Sequencer timing is a self-rescheduling `setTimeout` chain, not
+  sample-accurate lookahead scheduling (`adr/0010`, `adr/0011`) —
+  revisit if a later phase (e.g. ratchets) makes timing precision
+  actually matter.
 
 ## Explicitly out of scope (for now)
 - Talking to real FM-1 hardware over MIDI/USB — ruled out, see
