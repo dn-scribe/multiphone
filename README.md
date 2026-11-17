@@ -22,6 +22,18 @@ Static GitHub Pages hub of small multi-phone web apps.
     the file for the `Multiphone.host()` / `Multiphone.join()` API. Use
     this for any app where phones need to share live state, instead of
     reinventing room codes/signaling per app.
+  - `shared/single-phone.js` + `shared/single-phone.css`: lets one person
+    use every role a multi-phone app defines, on one device, with no
+    network — "Single Phone Mode," a real way to use an app alone, not a
+    debug feature. An app writes each role as a `mount(contentEl, room)`
+    function that only talks through `room` (same shape as a real
+    `shared/multiphone.js` room); `SinglePhone.createRoom()` gives it a
+    local room instead of a networked one, and
+    `SinglePhone.mountPanels()` lays the roles out side by side (all live
+    at once, on a wide screen) or as switchable tabs that never lose
+    state (on a narrow one). See FM-1 Clone for a working example; a
+    future app with more roles (e.g. a sequencer) gets this for free by
+    listing more panels.
 - `version.json` (hub) + `apps.json`'s `"version"` field (per app): every
   app, and the hub itself, is versioned independently with [semantic
   versioning](https://semver.org/). `version.html` lists them all. A

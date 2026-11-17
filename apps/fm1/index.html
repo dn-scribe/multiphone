@@ -9,8 +9,10 @@
 <title>FM-1 Clone</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="../../shared/single-phone.css">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script src="../../shared/multiphone.js"></script>
+<script src="../../shared/single-phone.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
@@ -38,19 +40,18 @@
   .err{color:#ff5252;text-align:center;font-size:16px;min-height:22px}
   .ctlLabel{font-size:14px;color:#ccc;display:flex;justify-content:space-between;padding-top:4px}
   input[type=range]{width:100%;height:34px;accent-color:#fff;background:transparent}
-  #kbArea{flex:1;display:flex;flex-direction:column;min-height:0}
   .octRow{display:flex;justify-content:center;align-items:center;gap:10px;padding:6px}
   .octBtn{background:#000;color:#fff;border:3px solid #fff;border-radius:10px;font-size:16px;font-weight:700;padding:8px 14px}
   .octBtn:active{background:#fff;color:#000}
-  #octLabel{font-weight:800;font-size:16px;min-width:64px;text-align:center}
-  #keys{flex:1;display:flex;min-height:0}
+  .octLabel{font-weight:800;font-size:16px;min-width:64px;text-align:center}
+  .keys{flex:1;display:flex;min-height:0}
   .key{flex:1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;
        font-size:13px;font-weight:700;border-right:2px solid #000}
   .key:last-child{border-right:none}
   .key.white{background:#fff;color:#000}
   .key.blk{background:#000;color:#fff;border:2px solid #fff}
   .key.on{background:#00e5ff !important;color:#000 !important}
-  #nowPlaying{font-size:20px;font-weight:800;min-height:28px}
+  .nowPlaying{font-size:18px;font-weight:800;min-height:26px;text-align:center;padding:4px}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:10}
   .overlay.on{display:flex}
   .overlay img{background:#fff;padding:8px;border-radius:8px;width:180px;height:180px}
@@ -68,6 +69,8 @@
       <button class="choice" id="btnHost">HOST</button>
       <button class="choice" id="btnJoin">JOIN</button>
     </div>
+    <button class="big" id="btnSingle">📱 Single Phone Mode</button>
+    <p class="hint">No second phone? See every role on this one device — side by side on a wide screen, or switch between them with the buttons at the top on a phone.</p>
   </div>
 </div>
 
@@ -96,60 +99,23 @@
   </div>
 </div>
 
-<div class="screen" id="screen-keyboard">
+<div class="screen" id="screen-stage">
   <div class="topbar">
-    <button id="roomPillKb">Room: ----</button>
+    <button id="roomPill">Room: ----</button>
     <div class="spacer"></div>
-    <div id="statusKb" style="font-size:12px;color:#aaa"></div>
+    <div id="statusStage" style="font-size:12px;color:#aaa"></div>
     <a href="../../">Home</a>
   </div>
-  <div id="kbArea">
-    <div class="octRow">
-      <button class="octBtn" id="octDown">◀ Oct</button>
-      <div id="octLabel">Oct 4</div>
-      <button class="octBtn" id="octUp">Oct ▶</button>
-    </div>
-    <div id="keys"></div>
-  </div>
+  <div id="stageContent" style="flex:1;display:flex;flex-direction:column;min-height:0"></div>
 </div>
 
-<div class="screen" id="screen-controls">
+<div class="screen" id="screen-singlephone">
   <div class="topbar">
-    <button id="roomPillCt">Room: ----</button>
+    <div style="font-weight:800;font-size:14px">📱 Single Phone Mode</div>
     <div class="spacer"></div>
-    <div id="statusCt" style="font-size:12px;color:#aaa"></div>
     <a href="../../">Home</a>
   </div>
-  <div class="body">
-    <p id="nowPlaying">—</p>
-    <div class="grid" id="presetChoices" style="grid-template-columns:repeat(4,1fr)">
-      <button class="choice small" data-p="epiano">E.Piano</button>
-      <button class="choice small" data-p="bell">Bell</button>
-      <button class="choice small" data-p="bass">Bass</button>
-      <button class="choice small" data-p="brass">Brass</button>
-    </div>
-    <label class="ctlLabel">Carrier wave</label>
-    <div class="grid" id="waveChoices" style="grid-template-columns:repeat(4,1fr)">
-      <button class="choice small" data-w="sine">Sine</button>
-      <button class="choice small" data-w="triangle">Tri</button>
-      <button class="choice small" data-w="square">Square</button>
-      <button class="choice small" data-w="sawtooth">Saw</button>
-    </div>
-    <label class="ctlLabel">Ratio <span id="vRatio"></span></label>
-    <input type="range" id="sRatio" min="0.25" max="8" step="0.25">
-    <label class="ctlLabel">FM amount <span id="vFm"></span></label>
-    <input type="range" id="sFm" min="0" max="10" step="0.1">
-    <label class="ctlLabel">Attack <span id="vA"></span></label>
-    <input type="range" id="sA" min="0" max="2" step="0.01">
-    <label class="ctlLabel">Decay <span id="vD"></span></label>
-    <input type="range" id="sD" min="0" max="2" step="0.01">
-    <label class="ctlLabel">Sustain <span id="vS"></span></label>
-    <input type="range" id="sS" min="0" max="1" step="0.01">
-    <label class="ctlLabel">Release <span id="vR"></span></label>
-    <input type="range" id="sR" min="0" max="3" step="0.01">
-    <label class="ctlLabel">Volume <span id="vVol"></span></label>
-    <input type="range" id="sVol" min="0" max="1" step="0.01">
-  </div>
+  <div id="spContainer" style="flex:1;min-height:0"></div>
 </div>
 
 <div class="overlay" id="qrOverlay">
@@ -162,7 +128,7 @@
 const $=id=>document.getElementById(id);
 const show=id=>{document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));$(id).classList.add('on')};
 
-// ---------- Audio: 2-operator FM synth ----------
+// ---------- Audio: 2-operator FM synth (stateless given a patch+freq, shared by every panel) ----------
 let ctx,master;
 function audio(){
   if(!ctx){ ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -195,25 +161,155 @@ function releaseVoice(v,patch){
   const stopAt=now+patch.r+0.08;
   v.mod.stop(stopAt); v.carrier.stop(stopAt);
 }
+const DEFAULT_PATCH={wave:'sine',ratio:1,fm:2,a:0.01,d:0.5,s:0.4,r:0.4,vol:0.8};
+const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const PRESETS={
+  epiano:{wave:'sine',ratio:1,fm:1.2,a:0.01,d:0.8,s:0.3,r:0.6,vol:0.8},
+  bell:{wave:'sine',ratio:3.5,fm:4,a:0.002,d:1.5,s:0,r:2.0,vol:0.7},
+  bass:{wave:'sine',ratio:1,fm:0.8,a:0.003,d:0.3,s:0.6,r:0.2,vol:0.9},
+  brass:{wave:'sawtooth',ratio:1,fm:3,a:0.08,d:0.2,s:0.8,r:0.3,vol:0.75},
+};
 // Local-only persistence: remembered on THIS phone's browser only, never
-// synced to the other phone (that's what the live network messages are
-// for). Reloading a different phone starts fresh — see adr/0007.
+// synced to the other phone/panel (that's what room messages are for).
+// Reloading a different phone starts fresh — see adr/0007.
 const LS_PREFIX='multiphone.fm1.';
 function lsGet(key,fallback){ try{ const v=localStorage.getItem(LS_PREFIX+key); return v==null?fallback:JSON.parse(v); }catch(e){ return fallback; } }
 function lsSet(key,val){ try{ localStorage.setItem(LS_PREFIX+key,JSON.stringify(val)); }catch(e){} }
 
-let currentPatch=lsGet('patch',null)||{wave:'sine',ratio:1,fm:2,a:0.01,d:0.5,s:0.4,r:0.4,vol:0.8};
-const heldVoices={}; // note -> voice, for the keyboard's own real notes
-let previewVoice=null, previewTimer=null;
-function stopPreview(){ if(previewVoice){ releaseVoice(previewVoice,currentPatch); previewVoice=null; } }
-function schedulePreview(){
-  clearTimeout(previewTimer);
-  previewTimer=setTimeout(()=>{ stopPreview(); previewVoice=triggerVoice(currentPatch,440); },40);
-}
-
 let wakeLock=null;
 async function keepAwake(){try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')keepAwake()});
+
+// ---------- Panels: the Keyboard and Controls roles, as mountable units ----------
+// Each takes a content element to build its own UI into (scoped with
+// querySelector, never global ids, so more than one copy could exist on
+// screen at once) and a `room` shaped {myId, send(msg), onMessage(cb)} —
+// it doesn't know or care whether that room is a real cross-phone
+// connection (shared/multiphone.js) or a local one (shared/single-phone.js).
+function createKeyboardPanel(el,room){
+  el.innerHTML=`
+    <div class="octRow">
+      <button class="octBtn" type="button" data-d="-1">◀ Oct</button>
+      <div class="octLabel">Oct 4</div>
+      <button class="octBtn" type="button" data-d="1">Oct ▶</button>
+    </div>
+    <div class="keys"></div>`;
+  const q=sel=>el.querySelector(sel);
+  let octave=lsGet('octave',4);
+  let patch=lsGet('patch',null)||DEFAULT_PATCH;
+  const held={};
+  function render(){
+    q('.octLabel').textContent='Oct '+octave;
+    const keysEl=q('.keys'); keysEl.innerHTML='';
+    for(let i=0;i<13;i++){
+      const name=NOTE_NAMES[i%12];
+      const midi=(octave+1)*12+i; // C4 = MIDI 60
+      const k=document.createElement('div');
+      k.className='key '+(name.includes('#')?'blk':'white');
+      k.textContent=name;
+      k.addEventListener('pointerdown',e=>{ e.preventDefault(); noteOn(midi,k); });
+      const off=()=>noteOff(midi,k);
+      k.addEventListener('pointerup',off); k.addEventListener('pointerleave',off); k.addEventListener('pointercancel',off);
+      keysEl.appendChild(k);
+    }
+  }
+  function noteOn(note,k){
+    if(held[note]) return;
+    k.classList.add('on');
+    held[note]=triggerVoice(patch,noteToFreq(note));
+    navigator.vibrate?.(10);
+    room.send({t:'note',note,on:true});
+  }
+  function noteOff(note,k){
+    const v=held[note]; if(!v) return;
+    k.classList.remove('on');
+    releaseVoice(v,patch); delete held[note];
+    room.send({t:'note',note,on:false});
+  }
+  q('.octRow').addEventListener('click',e=>{
+    const d=e.target.dataset.d; if(!d) return;
+    const next=octave+(+d);
+    if(next>=1&&next<=7){ octave=next; lsSet('octave',octave); render(); }
+  });
+  room.onMessage(msg=>{ if(msg.t==='patch'){ patch=msg.patch; lsSet('patch',patch); } });
+  render();
+}
+function createControlsPanel(el,room){
+  el.innerHTML=`
+    <div class="body">
+      <p class="nowPlaying">—</p>
+      <div class="grid presetChoices" style="grid-template-columns:repeat(4,1fr)">
+        <button class="choice small" type="button" data-p="epiano">E.Piano</button>
+        <button class="choice small" type="button" data-p="bell">Bell</button>
+        <button class="choice small" type="button" data-p="bass">Bass</button>
+        <button class="choice small" type="button" data-p="brass">Brass</button>
+      </div>
+      <label class="ctlLabel">Carrier wave</label>
+      <div class="grid waveChoices" style="grid-template-columns:repeat(4,1fr)">
+        <button class="choice small" type="button" data-w="sine">Sine</button>
+        <button class="choice small" type="button" data-w="triangle">Tri</button>
+        <button class="choice small" type="button" data-w="square">Square</button>
+        <button class="choice small" type="button" data-w="sawtooth">Saw</button>
+      </div>
+      <label class="ctlLabel">Ratio <span class="vRatio"></span></label>
+      <input type="range" class="sRatio" min="0.25" max="8" step="0.25">
+      <label class="ctlLabel">FM amount <span class="vFm"></span></label>
+      <input type="range" class="sFm" min="0" max="10" step="0.1">
+      <label class="ctlLabel">Attack <span class="vA"></span></label>
+      <input type="range" class="sA" min="0" max="2" step="0.01">
+      <label class="ctlLabel">Decay <span class="vD"></span></label>
+      <input type="range" class="sD" min="0" max="2" step="0.01">
+      <label class="ctlLabel">Sustain <span class="vS"></span></label>
+      <input type="range" class="sS" min="0" max="1" step="0.01">
+      <label class="ctlLabel">Release <span class="vR"></span></label>
+      <input type="range" class="sR" min="0" max="3" step="0.01">
+      <label class="ctlLabel">Volume <span class="vVol"></span></label>
+      <input type="range" class="sVol" min="0" max="1" step="0.01">
+    </div>`;
+  const q=sel=>el.querySelector(sel);
+  let patch=lsGet('patch',null)||DEFAULT_PATCH;
+  let previewVoice=null, previewTimer=null;
+  function stopPreview(){ if(previewVoice){ releaseVoice(previewVoice,patch); previewVoice=null; } }
+  function schedulePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(()=>{ stopPreview(); previewVoice=triggerVoice(patch,440); },40); }
+  function setSliders(p){
+    q('.sRatio').value=p.ratio; q('.sFm').value=p.fm; q('.sA').value=p.a; q('.sD').value=p.d;
+    q('.sS').value=p.s; q('.sR').value=p.r; q('.sVol').value=p.vol;
+    el.querySelectorAll('.waveChoices .choice').forEach(b=>b.classList.toggle('sel',b.dataset.w===p.wave));
+    updateReadouts();
+  }
+  function updateReadouts(){
+    q('.vRatio').textContent=(+q('.sRatio').value).toFixed(2);
+    q('.vFm').textContent=(+q('.sFm').value).toFixed(1);
+    q('.vA').textContent=(+q('.sA').value).toFixed(2)+'s';
+    q('.vD').textContent=(+q('.sD').value).toFixed(2)+'s';
+    q('.vS').textContent=(+q('.sS').value).toFixed(2);
+    q('.vR').textContent=(+q('.sR').value).toFixed(2)+'s';
+    q('.vVol').textContent=Math.round((+q('.sVol').value)*100)+'%';
+  }
+  function apply(){
+    patch={
+      wave: el.querySelector('.waveChoices .choice.sel')?.dataset.w||'sine',
+      ratio:+q('.sRatio').value, fm:+q('.sFm').value, a:+q('.sA').value, d:+q('.sD').value,
+      s:+q('.sS').value, r:+q('.sR').value, vol:+q('.sVol').value,
+    };
+    updateReadouts();
+    lsSet('patch',patch);
+    room.send({t:'patch',patch});
+    schedulePreview();
+  }
+  el.querySelectorAll('.presetChoices .choice').forEach(b=>{ b.onclick=()=>{ setSliders(PRESETS[b.dataset.p]); apply(); }; });
+  el.querySelectorAll('.waveChoices .choice').forEach(b=>{
+    b.onclick=()=>{ el.querySelectorAll('.waveChoices .choice').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); apply(); };
+  });
+  ['.sRatio','.sFm','.sA','.sD','.sS','.sR','.sVol'].forEach(sel=>q(sel).addEventListener('input',apply));
+  room.onMessage(msg=>{
+    if(msg.t==='patch'){ patch=msg.patch; lsSet('patch',patch); setSliders(patch); }
+    else if(msg.t==='note'){
+      q('.nowPlaying').textContent = msg.on ? (NOTE_NAMES[msg.note%12]+Math.floor(msg.note/12-1)) : '—';
+    }
+  });
+  setSliders(patch);
+}
 
 // ---------- Setup wizard ----------
 let netRole=null, roomCode='', hostCode='', instrumentRole=null;
@@ -223,6 +319,7 @@ $('joinCode').addEventListener('input',()=>{
 });
 $('btnHost').onclick=()=>{audio();keepAwake();netRole='host';show('screen-instrument')};
 $('btnJoin').onclick=()=>{audio();keepAwake();netRole='join';show('screen-join')};
+$('btnSingle').onclick=()=>{audio();keepAwake();enterSinglePhoneMode();};
 $('joinBack').onclick=()=>show('screen-role');
 $('joinGo').onclick=()=>{
   const v=$('joinCode').value.trim().toUpperCase();
@@ -246,20 +343,21 @@ $('instrGo').onclick=()=>{
   if(netRole==='host') startHost(); else startClient();
 };
 
-// ---------- Networking (shared/multiphone.js) ----------
+// ---------- Real cross-phone networking (shared/multiphone.js) ----------
 let room,myId,isHost=false;
 let peers={}; // id -> {role}
+let panelHandlers=[];
 
 function startHost(){
   isHost=true;
   room=Multiphone.host({
     appId:'fm1',
-    onReady:(code,id)=>{ hostCode=code; myId=id; peers[myId]={role:instrumentRole}; enterInstrument(); broadcastRoster(); },
+    onReady:(code,id)=>{ hostCode=code; myId=id; peers[myId]={role:instrumentRole}; enterStage(); broadcastRoster(); },
     onPeerJoin:(id,data)=>{ peers[id]={role:data.role}; broadcastRoster(); },
     onPeerLeave:(id)=>{ delete peers[id]; broadcastRoster(); },
     onMessage:(msg,fromId)=>{
       if(fromId!==myId){ room.broadcast(msg); return; } // relay any client message to everyone (incl. loopback to self)
-      handleMessage(msg);
+      routeMessage(msg);
     },
     onError:(e)=>{ $('instrErr').textContent='Could not start the room. Check your connection and try again.'; $('instrGo').disabled=false; },
   });
@@ -268,43 +366,36 @@ function startClient(){
   isHost=false;
   room=Multiphone.join({
     appId:'fm1', code:roomCode, joinData:{role:instrumentRole},
-    onOpen:(id)=>{ myId=id; enterInstrument(); },
-    onMessage:handleMessage,
-    onClose:()=>{ if($('screen-keyboard').classList.contains('on')||$('screen-controls').classList.contains('on')){
+    onOpen:(id)=>{ myId=id; enterStage(); },
+    onMessage:routeMessage,
+    onClose:()=>{ if($('screen-stage').classList.contains('on')){
       alert('Lost connection to the other phone.'); location.reload(); } },
     onError:(e)=>{ $('instrErr').textContent='Could not find that room. Check the code and try again.'; $('instrGo').disabled=false; },
   });
 }
 function broadcastRoster(){ if(isHost) room.broadcast({t:'roster',peers}); }
-
-function handleMessage(msg){
-  switch(msg.t){
-    case 'roster': peers=msg.peers; updateStatus(); break;
-    case 'patch': currentPatch=msg.patch; lsSet('patch',currentPatch); if(instrumentRole==='controls') setSliders(currentPatch); break;
-    case 'note': if(instrumentRole==='controls') showNowPlaying(msg.note,msg.on); break;
-  }
+function routeMessage(msg){
+  if(msg.t==='roster'){ peers=msg.peers; updateStageStatus(); return; }
+  panelHandlers.forEach(h=>h(msg));
 }
-
-function enterInstrument(){
-  const code=roomCode||hostCode;
-  $('roomPillKb').textContent='Room: '+code;
-  $('roomPillCt').textContent='Room: '+code;
-  if(instrumentRole==='keyboard'){ buildKeys(); show('screen-keyboard'); }
-  else { show('screen-controls'); }
-  updateStatus();
-}
-function updateStatus(){
+function updateStageStatus(){
   const others=Object.entries(peers).filter(([id])=>id!==myId).map(([,p])=>p.role);
-  const label = others.length ? ('connected: '+others.join(', ')) : 'playing solo';
-  $('statusKb').textContent=label; $('statusCt').textContent=label;
+  $('statusStage').textContent = others.length ? ('connected: '+others.join(', ')) : 'playing solo';
 }
-function showNowPlaying(note,on){
-  const NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  $('nowPlaying').textContent = on ? (NAMES[note%12]+Math.floor(note/12-1)) : '—';
+function enterStage(){
+  const code=roomCode||hostCode;
+  $('roomPill').textContent='Room: '+code;
+  show('screen-stage');
+  updateStageStatus();
+  const wrapped={
+    get myId(){ return myId; },
+    send(msg){ if(isHost) room.broadcast(msg); else room.send(msg); },
+    onMessage(cb){ panelHandlers.push(cb); },
+  };
+  if(instrumentRole==='keyboard') createKeyboardPanel($('stageContent'),wrapped);
+  else createControlsPanel($('stageContent'),wrapped);
 }
-function sendMsg(msg){ if(isHost) room.broadcast(msg); else room.send(msg); }
-
-// ---------- Room QR overlay ----------
+$('roomPill').onclick=openQr;
 function openQr(){
   const code=roomCode||hostCode;
   try{
@@ -314,85 +405,22 @@ function openQr(){
     $('qrOverlay').classList.add('on');
   }catch(e){}
 }
-$('roomPillKb').onclick=openQr; $('roomPillCt').onclick=openQr;
 $('qrClose').onclick=()=>$('qrOverlay').classList.remove('on');
 
-// ---------- Keyboard screen ----------
-const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-let octave=lsGet('octave',4);
-function buildKeys(){
-  $('octLabel').textContent='Oct '+octave;
-  const keys=$('keys'); keys.innerHTML='';
-  for(let i=0;i<13;i++){
-    const name=NOTE_NAMES[i%12];
-    const midi=(octave+1)*12+i; // C4 = MIDI 60
-    const el=document.createElement('div');
-    el.className='key '+(name.includes('#')?'blk':'white');
-    el.textContent=name;
-    el.dataset.note=midi;
-    el.addEventListener('pointerdown',e=>{ e.preventDefault(); noteOn(midi,el); });
-    const off=()=>noteOff(midi,el);
-    el.addEventListener('pointerup',off); el.addEventListener('pointerleave',off); el.addEventListener('pointercancel',off);
-    keys.appendChild(el);
-  }
+// ---------- Single Phone Mode (shared/single-phone.js, no network at all) ----------
+// Generic: a future app with more roles (e.g. a sequencer) just lists more
+// panels here — everything else (layout, switching, state-keeps-mounted)
+// comes from shared/single-phone.js for free.
+function enterSinglePhoneMode(){
+  show('screen-singlephone');
+  const localRoom=SinglePhone.createRoom();
+  const kbPeer=localRoom.addPeer();
+  const ctPeer=localRoom.addPeer();
+  SinglePhone.mountPanels($('spContainer'),[
+    {id:'keyboard', label:'🎹 Keyboard', mount:(el)=>createKeyboardPanel(el,kbPeer)},
+    {id:'controls', label:'🎛️ Controls', mount:(el)=>createControlsPanel(el,ctPeer)},
+  ]);
 }
-function noteOn(note,el){
-  if(heldVoices[note]) return;
-  el&&el.classList.add('on');
-  heldVoices[note]=triggerVoice(currentPatch,noteToFreq(note));
-  navigator.vibrate?.(10);
-  sendMsg({t:'note',note,on:true});
-}
-function noteOff(note,el){
-  const v=heldVoices[note]; if(!v) return;
-  el&&el.classList.remove('on');
-  releaseVoice(v,currentPatch); delete heldVoices[note];
-  sendMsg({t:'note',note,on:false});
-}
-$('octDown').onclick=()=>{ if(octave>1){ octave--; buildKeys(); lsSet('octave',octave); } };
-$('octUp').onclick=()=>{ if(octave<7){ octave++; buildKeys(); lsSet('octave',octave); } };
-
-// ---------- Controls screen ----------
-const PRESETS={
-  epiano:{wave:'sine',ratio:1,fm:1.2,a:0.01,d:0.8,s:0.3,r:0.6,vol:0.8},
-  bell:{wave:'sine',ratio:3.5,fm:4,a:0.002,d:1.5,s:0,r:2.0,vol:0.7},
-  bass:{wave:'sine',ratio:1,fm:0.8,a:0.003,d:0.3,s:0.6,r:0.2,vol:0.9},
-  brass:{wave:'sawtooth',ratio:1,fm:3,a:0.08,d:0.2,s:0.8,r:0.3,vol:0.75},
-};
-function setSliders(p){
-  $('sRatio').value=p.ratio; $('sFm').value=p.fm; $('sA').value=p.a; $('sD').value=p.d;
-  $('sS').value=p.s; $('sR').value=p.r; $('sVol').value=p.vol;
-  document.querySelectorAll('#waveChoices .choice').forEach(b=>b.classList.toggle('sel',b.dataset.w===p.wave));
-  updateReadouts();
-}
-function updateReadouts(){
-  $('vRatio').textContent=(+$('sRatio').value).toFixed(2);
-  $('vFm').textContent=(+$('sFm').value).toFixed(1);
-  $('vA').textContent=(+$('sA').value).toFixed(2)+'s';
-  $('vD').textContent=(+$('sD').value).toFixed(2)+'s';
-  $('vS').textContent=(+$('sS').value).toFixed(2);
-  $('vR').textContent=(+$('sR').value).toFixed(2)+'s';
-  $('vVol').textContent=Math.round((+$('sVol').value)*100)+'%';
-}
-function applyFromSliders(){
-  currentPatch={
-    wave: document.querySelector('#waveChoices .choice.sel')?.dataset.w || 'sine',
-    ratio:+$('sRatio').value, fm:+$('sFm').value, a:+$('sA').value, d:+$('sD').value,
-    s:+$('sS').value, r:+$('sR').value, vol:+$('sVol').value,
-  };
-  updateReadouts();
-  lsSet('patch',currentPatch);
-  sendMsg({t:'patch',patch:currentPatch});
-  schedulePreview();
-}
-document.querySelectorAll('#presetChoices .choice').forEach(b=>{
-  b.onclick=()=>{ setSliders(PRESETS[b.dataset.p]); applyFromSliders(); };
-});
-document.querySelectorAll('#waveChoices .choice').forEach(b=>{
-  b.onclick=()=>{ document.querySelectorAll('#waveChoices .choice').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); applyFromSliders(); };
-});
-['sRatio','sFm','sA','sD','sS','sR','sVol'].forEach(id=>$(id).addEventListener('input',applyFromSliders));
-setSliders(currentPatch); // reflect whatever was loaded (saved patch, or the default) in the slider UI
 
 document.addEventListener('contextmenu',e=>e.preventDefault());
 </script>

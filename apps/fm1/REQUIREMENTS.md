@@ -51,6 +51,14 @@ an FM synth. Inspired by the M-VAVE FM-1 hardware synth and its
 - [x] Versioned independently (`apps.json`'s `"version"` field,
   semantic versioning) — see `/version.html` for every app's current
   version.
+- [x] **Single Phone Mode**: a real, first-class way to use the whole
+  app alone, not a debug toggle — a third button on the role screen
+  mounts both the Keyboard and Controls panels locally (no network),
+  side by side and both live at once on a wide screen, or switchable
+  one at a time with a bar at top on a narrow one, never losing
+  either panel's state when switching (`adr/0008`). Built on new
+  generic infra (`shared/single-phone.js` + `.css`) any future
+  multi-role app can reuse the same way.
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between

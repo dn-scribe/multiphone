@@ -39,3 +39,21 @@
   back, and that tradeoff should be written into the app's `REQUIREMENTS.md`/
   `adr/`. It is never a substitute for `shared/multiphone.js` — that's for
   state that must be shared live between phones.
+- Single Phone Mode: a multi-role app (more than one kind of phone, e.g.
+  "Keyboard" and "Controls") should let one person use every role on one
+  device — a real, first-class way to use the app alone, never called or
+  framed as "debug." Write each role as a panel: a
+  `mount(contentEl, room)` function that builds that role's whole UI into
+  `contentEl` (scoped with `querySelector`, never a global id, since more
+  than one copy can exist on screen at once) and talks *only* through
+  `room` (`{myId, send(msg), onMessage(cb)}` — the same shape
+  `shared/multiphone.js`'s real rooms already have), never through shared
+  globals. That one panel implementation then works unchanged for both a
+  real cross-phone session and `shared/single-phone.js`'s local,
+  networkless room — use `SinglePhone.createRoom()` /
+  `SinglePhone.mountPanels()` (with `shared/single-phone.css`) to offer
+  it: side-by-side, all live at once, on a wide viewport; switchable one
+  at a time behind a bar, with every panel kept mounted (never losing
+  state) when switching, on a narrow one. This scales to more than two
+  roles for free (e.g. a future sequencer app) — list more panels, no new
+  plumbing.
