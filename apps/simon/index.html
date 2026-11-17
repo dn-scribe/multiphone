@@ -151,7 +151,6 @@
     <h2>GAME OVER</h2>
     <p id="finalRound"></p>
     <button class="big" id="playAgain" style="display:none">Play Again</button>
-    <p class="hint" id="waitHost" style="display:none">Waiting for the host to start a new round…</p>
     <a class="big" href="../../" style="text-decoration:none;text-align:center">Home</a>
   </div>
 </div>
@@ -196,15 +195,26 @@ async function keepAwake(){try{wakeLock=await navigator.wakeLock?.request('scree
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')keepAwake()});
 
 // ---------- Setup wizard state ----------
-let role=null, myCount=1, roomCode='', hostCode='', myName='', myEmoji='';
+// Name/emoji are remembered on THIS phone only (localStorage), so you don't
+// need to retype them each time - never synced to any other phone, same
+// tradeoff as FM-1 Clone's local persistence.
+const LS_PREFIX='multiphone.simon.';
+function lsGet(key,fallback){ try{ const v=localStorage.getItem(LS_PREFIX+key); return v==null?fallback:JSON.parse(v); }catch(e){ return fallback; } }
+function lsSet(key,val){ try{ localStorage.setItem(LS_PREFIX+key,JSON.stringify(val)); }catch(e){} }
 
-$('nameInput').addEventListener('input',()=>{ myName=$('nameInput').value.trim().slice(0,16); });
+let role=null, myCount=1, roomCode='', hostCode='';
+let myName=lsGet('name',''), myEmoji=lsGet('emoji','');
+$('nameInput').value=myName;
+document.querySelectorAll('#emojiChoices .choice').forEach(b=>{ if(b.dataset.e===myEmoji) b.classList.add('sel'); });
+
+$('nameInput').addEventListener('input',()=>{ myName=$('nameInput').value.trim().slice(0,16); lsSet('name',myName); });
 document.querySelectorAll('#emojiChoices .choice').forEach(b=>{
   b.onclick=()=>{
     const wasSel=b.classList.contains('sel');
     document.querySelectorAll('#emojiChoices .choice').forEach(x=>x.classList.remove('sel'));
     myEmoji = wasSel ? '' : b.dataset.e;
     if(!wasSel) b.classList.add('sel');
+    lsSet('emoji',myEmoji);
   };
 });
 $('joinCode').addEventListener('input',()=>{
@@ -260,7 +270,7 @@ function startHost(){
       if(gameActive){ gameActive=false; room.broadcast({t:'gameover',round:sequence.length,reason:'left'}); }
       room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n,name:p.name,emoji:p.emoji})),hostId:myId,mode});
     },
-    onMessage:(msg)=>{ if(msg.t==='press') hostHandlePress(msg.idx); else handleMessage(msg); },
+    onMessage:(msg)=>{ if(msg.t==='press') hostHandlePress(msg.idx); else if(msg.t==='restart') hostRestart(); else handleMessage(msg); },
     onError:(e)=>{ $('countErr').textContent='Could not start the room. Check your connection and try again.'; $('countGo').disabled=false; },
   });
 }
@@ -299,13 +309,28 @@ function enterLobbyClient(){
 }
 $('modeBasic').onclick=()=>{mode='basic';$('modeBasic').classList.add('sel');$('modeAdvanced').classList.remove('sel');room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n,name:p.name,emoji:p.emoji})),hostId:myId,mode})};
 $('modeAdvanced').onclick=()=>{mode='advanced';$('modeAdvanced').classList.add('sel');$('modeBasic').classList.remove('sel');room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n,name:p.name,emoji:p.emoji})),hostId:myId,mode})};
+function buildAssignment(){
+  const a={}; let gi=0;
+  for(const p of players){ a[p.id]=[]; for(let k=0;k<p.n;k++) a[p.id].push(gi++); }
+  return a;
+}
 $('startGame').onclick=()=>{
-  assignment={}; let gi=0;
-  for(const p of players){ assignment[p.id]=[]; for(let k=0;k<p.n;k++) assignment[p.id].push(gi++); }
+  assignment=buildAssignment();
   sequence=[]; expectedIndex=0; gameActive=true;
   room.broadcast({t:'start',assignment,mode});
   setTimeout(hostNextRound,700);
 };
+// Any player can ask for a new game after losing - recomputes the
+// assignment from the CURRENT player list (not the stale one from last
+// time), so anyone who joined late gets included with their own name and
+// button choice, not just whoever was connected when the last game started.
+function hostRestart(){
+  if(gameActive) return; // a restart is already underway - ignore duplicates
+  assignment=buildAssignment();
+  sequence=[]; expectedIndex=0; gameActive=true;
+  room.broadcast({t:'start',assignment,mode});
+  setTimeout(hostNextRound,700);
+}
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function renderPlayers(list,hostId,m){
@@ -425,16 +450,15 @@ function uiGameOver(msg){
   setStatus('Game over');
   playBuzzer();
   $('finalRound').textContent='Reached round '+msg.round+(msg.reason==='left'?' — a player disconnected':'');
-  $('playAgain').style.display=isHost?'block':'none';
-  $('waitHost').style.display=isHost?'none':'block';
+  $('playAgain').style.display='block';
   $('overlay').classList.add('on');
 }
-$('playAgain').onclick=()=>{
-  sequence=[]; expectedIndex=0; gameActive=true;
-  $('overlay').classList.remove('on');
-  room.broadcast({t:'start',assignment,mode});
-  setTimeout(hostNextRound,700);
-};
+// Any player can start a new game, not just the host - the host-only
+// authoritative state still runs the restart (recomputing the button
+// assignment from the current players, so a late joiner gets included);
+// a non-host just asks for it. The overlay hides itself once the new
+// game's 'start' broadcast actually arrives, via startGameLocal().
+$('playAgain').onclick=()=>{ if(isHost) hostRestart(); else room.send({t:'restart'}); };
 document.addEventListener('contextmenu',e=>e.preventDefault());
 </script>
 </body>
