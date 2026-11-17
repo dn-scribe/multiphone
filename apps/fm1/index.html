@@ -35,7 +35,7 @@
              background:#000;color:#fff;border:3px solid #fff;border-radius:14px;padding:14px;text-transform:uppercase}
   .big{display:block;width:100%;border:3px solid #fff;border-radius:14px;background:#000;color:#fff;
        font-size:22px;font-weight:800;padding:16px}
-  .big:active{background:#fff;color:#000}
+  .big:active,.big.active{background:#fff;color:#000}
   .big[disabled]{opacity:.35}
   .err{color:#ff5252;text-align:center;font-size:16px;min-height:22px}
   .ctlLabel{font-size:14px;color:#ccc;display:flex;justify-content:space-between;padding-top:4px}
@@ -298,9 +298,17 @@ function createControlsPanel(el,room){
     </div>`;
   const q=sel=>el.querySelector(sel);
   let patch=lsGet('patch',null)||DEFAULT_PATCH;
-  let previewVoice=null, previewTimer=null;
+  let lastNote=69; // A4 until a real note arrives from the Keyboard - adopted as the preview pitch
+  let previewVoice=null, previewTimer=null, previewLoopTimer=null;
   function stopPreview(){ clearTimeout(previewTimer); if(previewVoice){ releaseVoice(previewVoice,patch); previewVoice=null; } }
-  function playPreview(){ stopPreview(); previewVoice=triggerVoice(patch,440); previewTimer=setTimeout(stopPreview,550); }
+  function playPreview(){ stopPreview(); previewVoice=triggerVoice(patch,noteToFreq(lastNote)); previewTimer=setTimeout(stopPreview,550); }
+  function setPreviewLooping(on){
+    clearInterval(previewLoopTimer); previewLoopTimer=null;
+    if(on){ playPreview(); previewLoopTimer=setInterval(playPreview,700); }
+    else stopPreview();
+    q('.previewBtn').textContent=on?'⏸ Stop Preview':'▶️ Hear it';
+    q('.previewBtn').classList.toggle('active',on);
+  }
   function setSliders(p){
     q('.sRatio').value=p.ratio; q('.sFm').value=p.fm; q('.sA').value=p.a; q('.sD').value=p.d;
     q('.sS').value=p.s; q('.sR').value=p.r; q('.sVol').value=p.vol;
@@ -325,6 +333,7 @@ function createControlsPanel(el,room){
     updateReadouts();
     lsSet('patch',patch);
     room.send({t:'patch',patch});
+    if(previewLoopTimer) playPreview(); // hear the change immediately, not just on the next loop tick
   }
   function renderInstruments(){
     const wrap=q('.presetChoices'); wrap.innerHTML='';
@@ -349,7 +358,7 @@ function createControlsPanel(el,room){
       wrap.appendChild(b);
     });
   }
-  q('.previewBtn').onclick=playPreview;
+  q('.previewBtn').onclick=()=>setPreviewLooping(!previewLoopTimer);
   q('.saveInstrumentBtn').onclick=()=>{
     const name=(prompt('Name this instrument:')||'').trim().slice(0,24);
     if(!name) return;
@@ -366,6 +375,7 @@ function createControlsPanel(el,room){
     if(msg.t==='patch'){ patch=msg.patch; lsSet('patch',patch); setSliders(patch); }
     else if(msg.t==='note'){
       q('.nowPlaying').textContent = msg.on ? (NOTE_NAMES[msg.note%12]+Math.floor(msg.note/12-1)) : '—';
+      if(msg.on) lastNote=msg.note; // the preview adopts whatever was last actually played on a Keyboard
     }
   });
   setSliders(patch);
