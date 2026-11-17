@@ -1,9 +1,9 @@
 # FM-1 Clone — Requirements
 
-Your phones become a tiny FM synth: a Keyboard, a Controls surface,
-and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
-"Felucca" community firmware — naming/engine concepts only, see
-`adr/0001`.
+Your phones become a tiny FM synth: a Keyboard, a Controls surface, a
+looping Sequencer, and a non-looping Tracks writer. Inspired by the
+M-VAVE FM-1 hardware synth and its "Felucca" community firmware —
+naming/engine concepts only, see `adr/0001`.
 
 ## Decided and built (v1)
 - [x] No real FM-1 hardware or Felucca firmware code involved — a
@@ -122,6 +122,18 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   a hold gesture already means something else (a step's own tap/hold,
   the Instruments/Patterns library rows, FILL) — those keep their
   existing inline captions instead.
+- [x] **Track Writer ("Tracks")**: a 4th role for a full, non-repeating
+  arrangement, modeled on Felucca's own separate Piano Roll page — 4
+  tracks, length 32/64/128 steps, Tempo/Swing, Mute/Solo, and the same
+  per-step Pitch/Tie/Slide/Ratchet editing as the Sequencer. Unlike the
+  Sequencer, ▶️ Play runs the arrangement once and stops — no looping,
+  no Song mode, no per-step Chance/Condition, no saved-pattern library
+  (`adr/0019`).
+- [x] **Drag-to-tie**, shared by both the Sequencer and Tracks: dragging
+  across more than one step in a row ties them into one long sustained
+  note in a single gesture, instead of selecting and flipping Tie on
+  each step individually in edit mode. Tap-to-toggle and hold-to-accent
+  still work exactly as before (`adr/0019`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -159,6 +171,13 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
 - [ ] Sequencer timing is a self-rescheduling `setTimeout` chain, not
   sample-accurate lookahead scheduling (`adr/0010`, `adr/0011`) —
   revisit if a later phase makes timing precision actually matter.
+- [ ] Tracks has no saved-pattern/song library — it's one arrangement at
+  a time per phone, by design (`adr/0019`). Could grow one later if
+  writing/chaining several named arrangements turns out to be wanted.
+- [ ] Drag-to-tie: tapping a step in the middle of an existing tied run
+  off doesn't currently un-tie or re-anchor the steps after it — they
+  stay flagged `tie` with nothing live to extend, playing as silence
+  until the next real note (`adr/0019`).
 
 ## Explicitly out of scope (for now)
 - Talking to real FM-1 hardware over MIDI/USB — ruled out, see
