@@ -64,19 +64,39 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   plain on/off toggle, all playing the same fixed pitch (A4). Tempo
   slider, Play/Stop. Deliberately minimal — see `adr/0010`.
 - [x] **Sequencer, Phase 2**: 4 tracks (toward Felucca's 4), each with
-  its own preset (tap the track name to cycle E.Piano/Bell/Bass/Brass);
-  a shared pattern length of 16/32/64 steps; tap a step to toggle
-  on/off, tap-and-hold an *on* step to toggle **accent** (a fixed
-  louder level, not yet a continuous velocity — see open questions);
-  per-track Mute/Solo (solo overrides mute, standard mixing
-  semantics); Swing (50-75%, pair-duration-preserving). Everything
-  persists via `localStorage` per phone. Pitch is still fixed (A4) for
-  every track/step — see `adr/0011` for this and the other scoping
-  calls made while building it.
+  its own instrument; a shared pattern length of 16/32/64 steps; tap a
+  step to toggle on/off, tap-and-hold an *on* step to toggle **accent**
+  (a fixed louder level, not yet a continuous velocity — see open
+  questions); per-track Mute/Solo (solo overrides mute, standard
+  mixing semantics); Swing (50-75%, pair-duration-preserving).
+  Everything persists via `localStorage` per phone. Pitch is still
+  fixed (A4) for every track/step — see `adr/0011` for this and the
+  other scoping calls made while building it.
+- [x] **Saved instrument library**: Controls can save its current
+  patch as a named custom instrument ("💾 Save as Instrument"), kept
+  alongside the 4 built-in presets (hold a custom one to delete it).
+  Sequencer tracks pick from this same combined list, so a sound
+  designed on Controls can actually be used in the Sequencer
+  (`adr/0012`). Per phone only, same as everything else under
+  `adr/0007`; a track whose custom instrument gets deleted elsewhere
+  falls back safely rather than going silent or breaking (see
+  `adr/0012`'s note on cosmetic label staleness).
+- [x] **Sequencer, Phase 3**: per-step **ratchet** (1/2/3/4x
+  re-trigger), **chance** (100/75/50/25%), and **condition** (All /
+  play-every-other-loop ×2 / a momentary **FILL** transport button),
+  via a per-track ✏️ edit mode that lets you select a step and see its
+  detail controls without changing the normal tap=on/off, hold=accent
+  gestures. Deliberately *not* including per-step pitch, ties, slides,
+  chords, parameter locks, pattern save/song mode, or live recording —
+  see `adr/0013` for why each of those stays open rather than being
+  faked.
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
-  phones (today: one unnamed patch remembered per phone).
+  phones (today: one unnamed patch remembered per phone) — now
+  largely superseded by the saved-instrument library (`adr/0012`),
+  though that's instruments, not raw Controls-panel "current patch"
+  snapshots specifically.
 - [ ] More than 2 operators / selectable algorithms (closer to a true
   multi-op FM synth), if the 2-op voice feels too thin.
 - [ ] Live-updating already-held notes when a Controls slider moves
@@ -87,21 +107,25 @@ and a Sequencer. Inspired by the M-VAVE FM-1 hardware synth and its
   latest note from any Keyboard).
 - [ ] Validation/guard rails if multiple phones pick the same role
   (v1: allowed — e.g. two Controls and no Keyboard is possible).
+- [ ] A Sequencer track's displayed instrument label can go stale if
+  that instrument is deleted on Controls while the Sequencer panel
+  isn't re-rendered — cosmetic only, playback always falls back safely
+  (`adr/0012`).
 - [ ] Sequencer: per-step pitch/melody (every track/step is still the
-  same fixed A4 — never actually in a phase's brief yet, see
-  `adr/0011`).
-- [ ] Sequencer: each track's own preset editable (ratio/FM/ADSR/wave),
-  not just a cycle through the 4 fixed presets.
+  same fixed A4). This is the real prerequisite for ties, slides and
+  chords — see `adr/0013`.
+- [ ] Sequencer: each track's own instrument editable in place
+  (ratio/FM/ADSR/wave), not just picked from the saved-instrument
+  list.
 - [ ] Sequencer: true continuous per-step velocity, not just the
   binary accent built in Phase 2.
-- [ ] Sequencer Phase 3: per-step ties/slides/chords/ratchets/chance/
-  conditions; parameter locks; pattern save + song mode (chaining
+- [ ] Sequencer Phase 4 (tentative): per-step pitch/melody, ties,
+  slides, chords; parameter locks; pattern save + song mode (chaining
   patterns, like Felucca's up-to-16-section song mode); live recording
   by listening for the Keyboard's own `note` messages, with quantize.
 - [ ] Sequencer timing is a self-rescheduling `setTimeout` chain, not
   sample-accurate lookahead scheduling (`adr/0010`, `adr/0011`) —
-  revisit if a later phase (e.g. ratchets) makes timing precision
-  actually matter.
+  revisit if a later phase makes timing precision actually matter.
 
 ## Explicitly out of scope (for now)
 - Talking to real FM-1 hardware over MIDI/USB — ruled out, see
