@@ -60,6 +60,7 @@
   .seqTrackHead{display:flex;gap:6px;margin-bottom:8px}
   .trackBtn{background:#000;color:#fff;border:2px solid #fff;border-radius:8px;font-size:12px;font-weight:700;padding:6px 8px}
   .trackBtn.active{background:#fff;color:#000}
+  .trackBtn.recBtn.active{background:#ff1744;color:#000;border-color:#ff1744}
   .presetBtn{flex:1;text-align:left}
   .seqStepsRow{display:grid;grid-template-columns:repeat(16,1fr);gap:4px}
   .seqStep{aspect-ratio:1;border:2px solid #444;border-radius:6px;background:#000;position:relative}
@@ -665,7 +666,9 @@ function createSequencerPanel(el,room){
       t.editIndex=0;
     });
   }
-  tracks.forEach(t=>{ if(t.editIndex==null) t.editIndex=0; });
+  // `recording` is a runtime-only flag (adr/0024) - never persisted, so a
+  // reload always comes back with it off, same reasoning as `playing`.
+  tracks.forEach(t=>{ if(t.editIndex==null) t.editIndex=0; t.recording=false; });
   function saveTracks(){ lsSet('seqTracks',tracks); }
 
   // Saved patterns (named snapshots of tracks+length+swing, separate from
@@ -692,7 +695,7 @@ function createSequencerPanel(el,room){
       steps:resizeSteps(t.steps.map(s=>({on:s.on,accent:s.accent,
         ratchet:s.ratchet!=null?s.ratchet:1, chance:s.chance!=null?s.chance:100, condition:s.condition||'all',
         note:s.note!=null?s.note:DEFAULT_NOTE, tie:!!s.tie, slide:!!s.slide})),patternLen),
-      editMode:false, editIndex:0,
+      editMode:false, editIndex:0, recording:false,
     }));
     saveTracks();
     q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
@@ -879,14 +882,25 @@ function createSequencerPanel(el,room){
       attachTooltip(soloBtn,'Solo: while any track is soloed, only soloed tracks play - everything else goes quiet, even if not muted.',()=>{
         track.solo=!track.solo; soloBtn.classList.toggle('active',track.solo); saveTracks();
       });
+      const recBtn=document.createElement('button'); recBtn.type='button'; recBtn.textContent='⏺';
+      recBtn.className='trackBtn recBtn'+(track.recording?' active':'');
+      attachTooltip(recBtn,'Record: while this plays, notes you play on a connected Keyboard are written into the current step live - keep holding a note through several steps to tie them into one long note.',()=>{
+        track.recording=!track.recording;
+        if(track.recording&&track.editMode){ track.editMode=false; editBtn.classList.remove('active'); renderTrackDetail(track); }
+        recBtn.classList.toggle('active',track.recording);
+        if(!track.recording) saveTracks(); // commit what was recorded
+      });
       const editBtn=document.createElement('button'); editBtn.type='button'; editBtn.textContent='✏️';
       editBtn.className='trackBtn editBtn'+(track.editMode?' active':'');
-      attachTooltip(editBtn,'Edit mode: tap a step to select it, then set its pitch/tie/slide/ratchet/chance/condition below.',()=>{
-        track.editMode=!track.editMode; editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight();
+      attachTooltip(editBtn,'Edit mode: tap a step to select it, then set its pitch/tie/slide/ratchet/chance/condition below - or just play a note on a connected Keyboard to set the selected step\'s pitch instantly.',()=>{
+        track.editMode=!track.editMode;
+        if(track.editMode&&track.recording){ track.recording=false; recBtn.classList.remove('active'); saveTracks(); }
+        editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight();
       });
-      head.append(instBtn,muteBtn,soloBtn,editBtn);
+      head.append(instBtn,muteBtn,soloBtn,recBtn,editBtn);
       const stepsRow=document.createElement('div'); stepsRow.className='seqStepsRow';
       const stepRefreshers=[];
+      track._stepRefreshers=stepRefreshers;
       track.steps.forEach((s,si)=>{
         const {el:stepEl,refresh}=makeStepButton(track,si);
         stepsRow.appendChild(stepEl);
@@ -908,6 +922,31 @@ function createSequencerPanel(el,room){
     });
   }
   function updateCurHighlight(){ curHighlighters.forEach(r=>r()); }
+
+  // Keyboard recording (adr/0024): tracks whichever note is currently
+  // held on a connected Keyboard (last one wins if more than one
+  // overlaps, same "last note" convention Controls' preview already
+  // uses - adr/0004/0009/0015). Two uses: (1) a track in edit mode
+  // (and not recording) gets its selected step's pitch set the instant
+  // a key is struck - no network wait, just whatever this phone's own
+  // Keyboard panel would also hear if multi-role (adr/0023). (2) a
+  // recording track captures the held note into the CURRENTLY PLAYING
+  // step every tick, tying consecutive steps together for as long as
+  // the same note stays held.
+  let liveNote=null, liveNoteFreshOnset=false;
+  room.onMessage(msg=>{
+    if(msg.t!=='note') return;
+    if(msg.on){
+      liveNote=msg.note; liveNoteFreshOnset=true;
+      tracks.forEach(track=>{
+        if(track.editMode&&!track.recording){
+          const s=track.steps[track.editIndex];
+          s.on=true; s.note=msg.note; saveTracks(); renderTrackDetail(track);
+          if(track._stepRefreshers) track._stepRefreshers[track.editIndex]();
+        }
+      });
+    } else if(liveNote===msg.note){ liveNote=null; }
+  });
 
   function tick(){
     if(stepIndex===0){
@@ -932,6 +971,17 @@ function createSequencerPanel(el,room){
       const audible=anySolo?track.solo:!track.muted;
       const s=track.steps[stepIndex];
       if(audible&&s&&s.on&&!s.tie&&stepShouldFire(s)) fireTrackStep(track,s,stepIndex,baseIntervalMs(),room);
+    });
+    // Capture AFTER this pass's firing, so a just-played note doesn't
+    // also retrigger synthesized audio on the very same step - it only
+    // starts actually sounding from the step grid on the next loop.
+    tracks.forEach(track=>{
+      if(track.recording&&liveNote!=null){
+        const s=track.steps[stepIndex];
+        s.on=true; s.note=liveNote; s.tie=!liveNoteFreshOnset; s.accent=false; s.ratchet=1; s.slide=false;
+        liveNoteFreshOnset=false;
+        if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
+      }
     });
     const delay=delayAfterStep(stepIndex);
     stepIndex=(stepIndex+1)%patternLen;
@@ -1051,7 +1101,9 @@ function createTracksPanel(el,room){
       t.editIndex=0;
     });
   }
-  tracks.forEach(t=>{ if(t.editIndex==null) t.editIndex=0; });
+  // `recording` is a runtime-only flag (adr/0024) - never persisted, so a
+  // reload always comes back with it off, same reasoning as `playing`.
+  tracks.forEach(t=>{ if(t.editIndex==null) t.editIndex=0; t.recording=false; });
   function saveTracks(){ lsSet('trkTracks',tracks); }
 
   let playing=false, timer=null, stepIndex=0;
@@ -1157,14 +1209,25 @@ function createTracksPanel(el,room){
       attachTooltip(soloBtn,'Solo: while any track is soloed, only soloed tracks play - everything else goes quiet, even if not muted.',()=>{
         track.solo=!track.solo; soloBtn.classList.toggle('active',track.solo); saveTracks();
       });
+      const recBtn=document.createElement('button'); recBtn.type='button'; recBtn.textContent='⏺';
+      recBtn.className='trackBtn recBtn'+(track.recording?' active':'');
+      attachTooltip(recBtn,'Record: while this plays, notes you play on a connected Keyboard are written into the current step live - keep holding a note through several steps to tie them into one long note.',()=>{
+        track.recording=!track.recording;
+        if(track.recording&&track.editMode){ track.editMode=false; editBtn.classList.remove('active'); renderTrackDetail(track); }
+        recBtn.classList.toggle('active',track.recording);
+        if(!track.recording) saveTracks(); // commit what was recorded
+      });
       const editBtn=document.createElement('button'); editBtn.type='button'; editBtn.textContent='✏️';
       editBtn.className='trackBtn editBtn'+(track.editMode?' active':'');
-      attachTooltip(editBtn,'Edit mode: tap a step to select it, then set its pitch/tie/slide/ratchet below.',()=>{
-        track.editMode=!track.editMode; editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight();
+      attachTooltip(editBtn,'Edit mode: tap a step to select it, then set its pitch/tie/slide/ratchet below - or just play a note on a connected Keyboard to set the selected step\'s pitch instantly.',()=>{
+        track.editMode=!track.editMode;
+        if(track.editMode&&track.recording){ track.recording=false; recBtn.classList.remove('active'); saveTracks(); }
+        editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight();
       });
-      head.append(instBtn,muteBtn,soloBtn,editBtn);
+      head.append(instBtn,muteBtn,soloBtn,recBtn,editBtn);
       const stepsRow=document.createElement('div'); stepsRow.className='seqStepsRow';
       const stepRefreshers=[];
+      track._stepRefreshers=stepRefreshers;
       track.steps.forEach((s,si)=>{
         const {el:stepEl,refresh}=makeStepButton(track,si);
         stepsRow.appendChild(stepEl);
@@ -1187,6 +1250,27 @@ function createTracksPanel(el,room){
   }
   function updateCurHighlight(){ curHighlighters.forEach(r=>r()); }
 
+  // Keyboard recording (adr/0024) - see the Sequencer's identical comment
+  // for the full rationale. Tracks a connected Keyboard's currently held
+  // note; a track in edit mode (not recording) gets it written straight
+  // to the selected step, and a recording track captures it into
+  // whichever step is currently playing, tying consecutive steps
+  // together for as long as the same note stays held.
+  let liveNote=null, liveNoteFreshOnset=false;
+  room.onMessage(msg=>{
+    if(msg.t!=='note') return;
+    if(msg.on){
+      liveNote=msg.note; liveNoteFreshOnset=true;
+      tracks.forEach(track=>{
+        if(track.editMode&&!track.recording){
+          const s=track.steps[track.editIndex];
+          s.on=true; s.note=msg.note; saveTracks(); renderTrackDetail(track);
+          if(track._stepRefreshers) track._stepRefreshers[track.editIndex]();
+        }
+      });
+    } else if(liveNote===msg.note){ liveNote=null; }
+  });
+
   function tick(){
     updateCurHighlight();
     const anySolo=tracks.some(t=>t.solo);
@@ -1194,6 +1278,16 @@ function createTracksPanel(el,room){
       const audible=anySolo?track.solo:!track.muted;
       const s=track.steps[stepIndex];
       if(audible&&s&&s.on&&!s.tie) fireTrackStep(track,s,stepIndex,baseIntervalMs(),room);
+    });
+    // Capture AFTER this pass's firing - see the Sequencer's identical
+    // comment for why.
+    tracks.forEach(track=>{
+      if(track.recording&&liveNote!=null){
+        const s=track.steps[stepIndex];
+        s.on=true; s.note=liveNote; s.tie=!liveNoteFreshOnset; s.accent=false; s.ratchet=1; s.slide=false;
+        liveNoteFreshOnset=false;
+        if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
+      }
     });
     if(stepIndex>=trackLen-1){ stop(); return; } // non-repeating: stop at the end instead of looping
     const delay=delayAfterStep(stepIndex);
@@ -1238,7 +1332,7 @@ function createTracksPanel(el,room){
     swing=Math.max(50,Math.min(75,+data.swing||50)); lsSet('trkSwing',swing);
     tracks=data.tracks.map((t,idx)=>({
       instrumentKey:t.instrumentKey||TRACK_DEFAULT_KEYS[idx],
-      muted:!!t.muted, solo:!!t.solo, editMode:false, editIndex:0,
+      muted:!!t.muted, solo:!!t.solo, editMode:false, editIndex:0, recording:false,
       steps:resizeSteps((Array.isArray(t.steps)?t.steps:[]).map(s=>({
         on:!!s.on, accent:!!s.accent, ratchet:s.ratchet!=null?s.ratchet:1, chance:100, condition:'all',
         note:s.note!=null?s.note:DEFAULT_NOTE, tie:!!s.tie, slide:!!s.slide,
