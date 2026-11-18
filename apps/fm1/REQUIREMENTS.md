@@ -1,11 +1,12 @@
 # FM-1 Clone — Requirements
 
-Your phones become a tiny FM synth: a Keyboard, a Controls surface, and
-Tracks — a step editor that can loop forever or play once, your choice
-(`adr/0025`; this used to be two separate roles, a looping "Sequencer"
-and a non-looping "Track Writer" — merged into one tool with a Loop
-toggle). Inspired by the M-VAVE FM-1 hardware synth and its "Felucca"
-community firmware — naming/engine concepts only, see `adr/0001`.
+Your phones become a tiny FM synth: a Keyboard, a Controls surface, a
+Drum Pad, and Tracks — a step editor that can loop forever or play once,
+your choice (`adr/0025`; this used to be two separate roles, a looping
+"Sequencer" and a non-looping "Track Writer" — merged into one tool with
+a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
+"Felucca" community firmware — naming/engine concepts only, see
+`adr/0001`.
 
 ## Decided and built (v1)
 - [x] No real FM-1 hardware or Felucca firmware code involved — a
@@ -188,6 +189,17 @@ community firmware — naming/engine concepts only, see `adr/0001`.
   alone). File Export/Import now carries `loop` too; an old,
   pre-merge Track Writer export (no `loop` field) imports with Loop off,
   matching what it always was (`adr/0025`).
+- [x] **Drum Pad role**: 10 pads (Kick/Snare/Hat/Open Hat/Lo Tom/Hi
+  Tom/Clap/Crash/Cowbell/Shaker), synthesized with Phone Band's own
+  percussion engine (`apps/band`), ported in almost verbatim. Sends the
+  same note-message shape a Keyboard does, so it works with Tracks'
+  existing recording (`adr/0024`) with no changes to that mechanism —
+  arm ⏺ Record and play along, or tap a pad while a step is selected in
+  ✏️ edit mode to set it instantly. A track's instrument can be set to
+  🥁 Drum Kit, which plays recorded drum hits back with the real
+  percussion sounds instead of the FM voice; the step detail panel
+  adapts (drum name instead of note name, no Slide toggle, since slide
+  has nothing to glide on a drum hit) (`adr/0027`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
