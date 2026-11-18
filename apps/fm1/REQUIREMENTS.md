@@ -143,6 +143,12 @@ naming/engine concepts only, see `adr/0001`.
   took. A tied step's detail panel also now explains that its own
   pitch has no audible effect, since a tied step never retriggers
   (`adr/0021`).
+- [x] **Tracks: Export / Import**: ⬇️ Export downloads the current
+  arrangement as a `.json` file; ⬆️ Import loads one back (after
+  confirming, since it replaces what's currently loaded). This is how
+  you keep more than one version or move an arrangement to another
+  phone/browser, since Tracks has no in-app pattern library and nothing
+  in this app syncs between devices on its own (`adr/0022`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -180,13 +186,17 @@ naming/engine concepts only, see `adr/0001`.
 - [ ] Sequencer timing is a self-rescheduling `setTimeout` chain, not
   sample-accurate lookahead scheduling (`adr/0010`, `adr/0011`) —
   revisit if a later phase makes timing precision actually matter.
-- [ ] Tracks has no saved-pattern/song library — it's one arrangement at
-  a time per phone, by design (`adr/0019`). Could grow one later if
-  writing/chaining several named arrangements turns out to be wanted.
+- [ ] Tracks has no in-app named-pattern/song library — it's one
+  arrangement at a time per phone, by design (`adr/0019`), though
+  Export/Import (`adr/0022`) now covers keeping more than one version
+  as separate files. Could still grow an in-app library later if that
+  turns out to be wanted.
 - [ ] Drag-to-tie: tapping a step in the middle of an existing tied run
   off doesn't currently un-tie or re-anchor the steps after it — they
   stay flagged `tie` with nothing live to extend, playing as silence
   until the next real note (`adr/0019`).
+- [ ] Sequencer's saved patterns/Song don't have file Export/Import the
+  way Tracks now does (`adr/0022`) — only `localStorage`.
 
 ## Explicitly out of scope (for now)
 - Talking to real FM-1 hardware over MIDI/USB — ruled out, see
