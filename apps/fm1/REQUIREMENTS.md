@@ -1,9 +1,11 @@
 # FM-1 Clone — Requirements
 
-Your phones become a tiny FM synth: a Keyboard, a Controls surface, a
-looping Sequencer, and a non-looping Tracks writer. Inspired by the
-M-VAVE FM-1 hardware synth and its "Felucca" community firmware —
-naming/engine concepts only, see `adr/0001`.
+Your phones become a tiny FM synth: a Keyboard, a Controls surface, and
+Tracks — a step editor that can loop forever or play once, your choice
+(`adr/0025`; this used to be two separate roles, a looping "Sequencer"
+and a non-looping "Track Writer" — merged into one tool with a Loop
+toggle). Inspired by the M-VAVE FM-1 hardware synth and its "Felucca"
+community firmware — naming/engine concepts only, see `adr/0001`.
 
 ## Decided and built (v1)
 - [x] No real FM-1 hardware or Felucca firmware code involved — a
@@ -12,8 +14,10 @@ naming/engine concepts only, see `adr/0001`.
   browsers are best-effort, not a blocker (`adr/0002`).
 - [x] Two phone roles — "Keyboard" and "Controls" — picked after
   host/join, kept in sync over `shared/multiphone.js` (the same
-  networking layer built for Phone Simon). Later grew to 4 roles total
-  and multi-select (a phone can run more than one at once, `adr/0023`).
+  networking layer built for Phone Simon). Grew to 4 roles and
+  multi-select (a phone can run more than one at once, `adr/0023`), then
+  back to 3 once the Sequencer and Track Writer merged into one Tracks
+  role (`adr/0025`).
 - [x] 2-operator FM voice (sine modulator, selectable carrier waveform),
   with ratio, FM amount (modulation index), ADSR, and volume as the
   full parameter set — not a 1:1 clone of Felucca's 13 engines
@@ -67,6 +71,11 @@ naming/engine concepts only, see `adr/0001`.
   switching (`adr/0008`). Built on generic infra
   (`shared/single-phone.js` + `.css`) any future multi-role app can
   reuse the same way.
+- [x] The bullets below through "Track Writer" describe the Sequencer
+  and Track Writer as they were built in phases, as two separate roles.
+  All of this functionality still exists and still works the way
+  described — it's just one role now, "Tracks," with a 🔁 Loop toggle
+  standing in for "which of the two tools you were in" (`adr/0025`).
 - [x] **Sequencer, Phase 1**: a third role. One track, 16 steps, each a
   plain on/off toggle, all playing the same fixed pitch (A4). Tempo
   slider, Play/Stop. Deliberately minimal — see `adr/0010`.
@@ -166,6 +175,17 @@ naming/engine concepts only, see `adr/0001`.
   whichever note is held, and holding through several steps ties them
   into one long note - using the same tie/slide playback as everywhere
   else, not a separate mechanism (`adr/0024`).
+- [x] **Sequencer and Tracks merged into one tool**: a single 🔁 Loop
+  toggle next to Play replaces picking between two separate roles - on
+  (default) repeats forever with Chance/Condition/FILL available, off
+  runs the pattern once and stops. `loop` is saved as part of a pattern
+  snapshot, so a Song can chain looping grooves and one-shot written
+  parts together - the actual point of combining the two tools, done
+  through the existing Song mechanism rather than a new one. Pattern
+  length is now 16/32/64/128 (the union of what each tool offered
+  alone). File Export/Import now carries `loop` too; an old,
+  pre-merge Track Writer export (no `loop` field) imports with Loop off,
+  matching what it always was (`adr/0025`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -204,17 +224,16 @@ naming/engine concepts only, see `adr/0001`.
 - [ ] Sequencer timing is a self-rescheduling `setTimeout` chain, not
   sample-accurate lookahead scheduling (`adr/0010`, `adr/0011`) —
   revisit if a later phase makes timing precision actually matter.
-- [ ] Tracks has no in-app named-pattern/song library — it's one
-  arrangement at a time per phone, by design (`adr/0019`), though
-  Export/Import (`adr/0022`) now covers keeping more than one version
-  as separate files. Could still grow an in-app library later if that
-  turns out to be wanted.
 - [ ] Drag-to-tie: tapping a step in the middle of an existing tied run
   off doesn't currently un-tie or re-anchor the steps after it — they
   stay flagged `tie` with nothing live to extend, playing as silence
   until the next real note (`adr/0019`).
-- [ ] Sequencer's saved patterns/Song don't have file Export/Import the
-  way Tracks now does (`adr/0022`) — only `localStorage`.
+- [ ] The merged Tracks panel is noticeably taller/denser than either
+  tool was alone — Loop, FILL, Tempo, Swing, Length, Patterns, Save
+  Pattern, Song Mode, the Song list, and Export/Import all now live
+  above the track rows in one scroll. Not fixed yet (e.g. collapsible
+  sections); worth revisiting if it turns out to matter in practice
+  (`adr/0025`).
 
 ## Explicitly out of scope (for now)
 - Talking to real FM-1 hardware over MIDI/USB — ruled out, see

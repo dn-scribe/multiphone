@@ -1,7 +1,9 @@
 # 23. A phone can run more than one role at once
 
 ## Status
-Accepted
+Accepted. The specific role list changed in `adr/0025` (Sequencer and
+Tracks merged into one role, back to 3 total) but multi-select itself,
+and everything below about why it works, is unchanged.
 
 ## Context
 Each networked phone was locked to exactly one role (Keyboard, Controls,
