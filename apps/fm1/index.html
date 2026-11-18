@@ -44,14 +44,15 @@
   .octBtn{background:#000;color:#fff;border:3px solid #fff;border-radius:10px;font-size:16px;font-weight:700;padding:8px 14px}
   .octBtn:active,.octBtn.active{background:#fff;color:#000}
   .octLabel{font-weight:800;font-size:16px;min-width:64px;text-align:center}
-  .keys{flex:1;display:flex;min-height:0}
+  .keys{flex:1;display:flex;flex-direction:column;min-height:0}
+  .keyRow{flex:1;display:flex;min-height:0}
+  .keys.organ .keyRow:first-child{border-bottom:4px solid #fff}
   .key{flex:1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;
        font-size:13px;font-weight:700;border-right:2px solid #000}
   .key:last-child{border-right:none}
   .key.white{background:#fff;color:#000}
   .key.blk{background:#000;color:#fff;border:2px solid #fff}
   .key.on{background:#00e5ff !important;color:#000 !important}
-  .keys.many .key{font-size:10px;padding-bottom:6px}
   .nowPlaying{font-size:18px;font-weight:800;min-height:26px;text-align:center;padding:4px}
   .instrumentGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px}
   .seqTransport{display:flex;align-items:center;gap:10px}
@@ -403,26 +404,38 @@ function createKeyboardPanel(el,room){
   let octave=lsGet('octave',4);
   let patch=lsGet('patch',null)||DEFAULT_PATCH;
   const held={};
-  // Portrait ("tall", phone not tilted) has less width per key, so it shows
-  // fewer octaves at a normal key size; landscape has more width to spend,
-  // so it shows one more octave, sized down a bit so they still all fit.
+  // Always 2 octaves' worth of keys either way - only the layout changes.
+  // Landscape has enough width for one straight row of both octaves at a
+  // normal key size. Portrait doesn't, so instead of squeezing the same
+  // 25 keys into one narrow row, it stacks them two rows deep, organ-style
+  // (upper octave on top, lower on the bottom) - half as many keys per
+  // row, so each one stays a comfortable width.
   const landscapeQuery=window.matchMedia('(orientation: landscape)');
-  function octaveCount(){ return landscapeQuery.matches?3:2; }
-  function render(){
-    q('.octLabel').textContent='Oct '+octave;
-    const keysEl=q('.keys'); keysEl.innerHTML='';
-    const count=octaveCount();
-    keysEl.classList.toggle('many',count>2);
-    for(let i=0;i<count*12+1;i++){
+  function buildRow(parent,baseOctave,keyCount){
+    const rowEl=document.createElement('div'); rowEl.className='keyRow';
+    for(let i=0;i<keyCount;i++){
       const name=NOTE_NAMES[i%12];
-      const midi=(octave+1)*12+i; // C4 = MIDI 60
+      const midi=(baseOctave+1)*12+i; // C4 = MIDI 60
       const k=document.createElement('div');
       k.className='key '+(name.includes('#')?'blk':'white');
       k.textContent=name;
       k.addEventListener('pointerdown',e=>{ e.preventDefault(); noteOn(midi,k); });
       const off=()=>noteOff(midi,k);
       k.addEventListener('pointerup',off); k.addEventListener('pointerleave',off); k.addEventListener('pointercancel',off);
-      keysEl.appendChild(k);
+      rowEl.appendChild(k);
+    }
+    parent.appendChild(rowEl);
+  }
+  function render(){
+    q('.octLabel').textContent='Oct '+octave;
+    const keysEl=q('.keys'); keysEl.innerHTML='';
+    const landscape=landscapeQuery.matches;
+    keysEl.classList.toggle('organ',!landscape);
+    if(landscape){
+      buildRow(keysEl,octave,25); // one straight row, both octaves
+    } else {
+      buildRow(keysEl,octave+1,13); // upper octave on top
+      buildRow(keysEl,octave,13);   // lower octave on the bottom
     }
   }
   landscapeQuery.addEventListener('change',render);

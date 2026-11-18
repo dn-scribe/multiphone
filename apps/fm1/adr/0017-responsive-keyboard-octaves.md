@@ -1,7 +1,10 @@
 # 17. Keyboard octave count follows orientation
 
 ## Status
-Accepted
+Superseded by `adr/0020` — landscape's 3rd octave and the "many" small-key
+size were dropped; portrait switched from one dense row to two
+organ-style rows. The orientation-based re-render mechanism itself
+(`matchMedia('(orientation: ...)')`, live on rotation) is unchanged.
 
 ## Context
 The Keyboard panel always showed exactly one octave plus one note (13
