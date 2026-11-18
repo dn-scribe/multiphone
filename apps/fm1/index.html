@@ -381,6 +381,27 @@ function attachTooltip(el,text,onTap){
   el.addEventListener('pointerleave',release);
   el.addEventListener('pointercancel',release);
 }
+// A button that fires immediately on tap, then auto-repeats (after a
+// 400ms delay, every 90ms) while held - used for the step-pitch +/-
+// buttons, where a real part can need many semitones' worth of taps
+// otherwise (adr/0021). onTap fires on every step (just updates the
+// value/label - no save, no full re-render, so the button being held
+// never gets torn out from under the gesture mid-repeat); onRelease
+// fires once, when the hold ends, to actually persist/re-render.
+function attachRepeatableTap(el,onTap,onRelease){
+  let repeatTimer=null, startTimer=null, active=false;
+  function stop(){
+    clearTimeout(startTimer); clearInterval(repeatTimer); startTimer=repeatTimer=null;
+    if(active){ active=false; onRelease&&onRelease(); }
+  }
+  el.addEventListener('pointerdown',e=>{
+    e.preventDefault(); active=true; onTap();
+    startTimer=setTimeout(()=>{ repeatTimer=setInterval(onTap,90); },400);
+  });
+  el.addEventListener('pointerup',stop);
+  el.addEventListener('pointerleave',stop);
+  el.addEventListener('pointercancel',stop);
+}
 
 let wakeLock=null;
 async function keepAwake(){try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}}
@@ -778,13 +799,20 @@ function createSequencerPanel(el,room){
   }
   function noteRow(track,s){
     const row=document.createElement('div'); row.className='octRow';
+    const octDec=document.createElement('button'); octDec.type='button'; octDec.className='octBtn'; octDec.textContent='◀◀';
     const dec=document.createElement('button'); dec.type='button'; dec.className='octBtn'; dec.textContent='◀';
     const label=document.createElement('div'); label.className='octLabel';
     label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1);
     const inc=document.createElement('button'); inc.type='button'; inc.className='octBtn'; inc.textContent='▶';
-    dec.onclick=()=>{ if(s.note>24){ s.note--; saveTracks(); renderTrackDetail(track); } };
-    inc.onclick=()=>{ if(s.note<108){ s.note++; saveTracks(); renderTrackDetail(track); } };
-    row.append(dec,label,inc);
+    const octInc=document.createElement('button'); octInc.type='button'; octInc.className='octBtn'; octInc.textContent='▶▶';
+    function updateLabel(){ label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1); }
+    function step(delta){ s.note=Math.max(24,Math.min(108,s.note+delta)); updateLabel(); }
+    function commit(){ saveTracks(); }
+    attachRepeatableTap(dec,()=>step(-1),commit);
+    attachRepeatableTap(inc,()=>step(1),commit);
+    attachRepeatableTap(octDec,()=>step(-12),commit);
+    attachRepeatableTap(octInc,()=>step(12),commit);
+    row.append(octDec,dec,label,inc,octInc);
     return row;
   }
   function renderTrackDetail(track){
@@ -796,9 +824,14 @@ function createSequencerPanel(el,room){
     const title=document.createElement('div'); title.className='ctlLabel'; title.textContent='Step '+(track.editIndex+1);
     panel.appendChild(title);
     const pLabel=document.createElement('div'); pLabel.className='ctlLabel'; pLabel.textContent='Pitch ⓘ';
-    attachTooltip(pLabel,'This step\'s note. Tie and slide only make sense relative to the step before them.');
+    attachTooltip(pLabel,'This step\'s note. ◀▶ moves a semitone, ◀◀▶▶ jumps an octave - hold either to repeat. Tie and slide only make sense relative to the step before them.');
     panel.appendChild(pLabel);
     panel.appendChild(noteRow(track,s));
+    if(s.tie){
+      const tieHint=document.createElement('p'); tieHint.className='hint'; tieHint.style.padding='2px 0';
+      tieHint.textContent='This step is tied, so it never retriggers - its own pitch above has no audible effect. The sound comes from whichever earlier step started this tied run.';
+      panel.appendChild(tieHint);
+    }
     const tsRow=document.createElement('div'); tsRow.className='grid'; tsRow.style.gridTemplateColumns='repeat(2,1fr)'; tsRow.style.paddingTop='4px';
     const tieBtn=document.createElement('button'); tieBtn.type='button'; tieBtn.className='choice small'+(s.tie?' sel':'');
     tieBtn.textContent='Tie: '+(s.tie?'On':'Off');
@@ -1046,13 +1079,20 @@ function createTracksPanel(el,room){
   }
   function noteRow(track,s){
     const row=document.createElement('div'); row.className='octRow';
+    const octDec=document.createElement('button'); octDec.type='button'; octDec.className='octBtn'; octDec.textContent='◀◀';
     const dec=document.createElement('button'); dec.type='button'; dec.className='octBtn'; dec.textContent='◀';
     const label=document.createElement('div'); label.className='octLabel';
     label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1);
     const inc=document.createElement('button'); inc.type='button'; inc.className='octBtn'; inc.textContent='▶';
-    dec.onclick=()=>{ if(s.note>24){ s.note--; saveTracks(); renderTrackDetail(track); } };
-    inc.onclick=()=>{ if(s.note<108){ s.note++; saveTracks(); renderTrackDetail(track); } };
-    row.append(dec,label,inc);
+    const octInc=document.createElement('button'); octInc.type='button'; octInc.className='octBtn'; octInc.textContent='▶▶';
+    function updateLabel(){ label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1); }
+    function step(delta){ s.note=Math.max(24,Math.min(108,s.note+delta)); updateLabel(); }
+    function commit(){ saveTracks(); }
+    attachRepeatableTap(dec,()=>step(-1),commit);
+    attachRepeatableTap(inc,()=>step(1),commit);
+    attachRepeatableTap(octDec,()=>step(-12),commit);
+    attachRepeatableTap(octInc,()=>step(12),commit);
+    row.append(octDec,dec,label,inc,octInc);
     return row;
   }
   function renderTrackDetail(track){
@@ -1064,9 +1104,14 @@ function createTracksPanel(el,room){
     const title=document.createElement('div'); title.className='ctlLabel'; title.textContent='Step '+(track.editIndex+1);
     panel.appendChild(title);
     const pLabel=document.createElement('div'); pLabel.className='ctlLabel'; pLabel.textContent='Pitch ⓘ';
-    attachTooltip(pLabel,'This step\'s note. Tie and slide only make sense relative to the step before them.');
+    attachTooltip(pLabel,'This step\'s note. ◀▶ moves a semitone, ◀◀▶▶ jumps an octave - hold either to repeat. Tie and slide only make sense relative to the step before them.');
     panel.appendChild(pLabel);
     panel.appendChild(noteRow(track,s));
+    if(s.tie){
+      const tieHint=document.createElement('p'); tieHint.className='hint'; tieHint.style.padding='2px 0';
+      tieHint.textContent='This step is tied, so it never retriggers - its own pitch above has no audible effect. The sound comes from whichever earlier step started this tied run.';
+      panel.appendChild(tieHint);
+    }
     const tsRow=document.createElement('div'); tsRow.className='grid'; tsRow.style.gridTemplateColumns='repeat(2,1fr)'; tsRow.style.paddingTop='4px';
     const tieBtn=document.createElement('button'); tieBtn.type='button'; tieBtn.className='choice small'+(s.tie?' sel':'');
     tieBtn.textContent='Tie: '+(s.tie?'On':'Off');

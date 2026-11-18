@@ -135,6 +135,14 @@ naming/engine concepts only, see `adr/0001`.
   note in a single gesture, instead of selecting and flipping Tie on
   each step individually in edit mode. Tap-to-toggle and hold-to-accent
   still work exactly as before (`adr/0019`).
+- [x] **Pitch stepper: octave-jump + hold-to-repeat**, shared by both
+  the Sequencer and Tracks: ◀◀/▶▶ buttons jump a full octave, and all
+  four pitch buttons (◀◀◀▶▶▶) now auto-repeat while held, instead of
+  needing one tap per semitone — found by actually composing a
+  multi-track piece in Tracks and timing how long a large pitch move
+  took. A tied step's detail panel also now explains that its own
+  pitch has no audible effect, since a tied step never retriggers
+  (`adr/0021`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
