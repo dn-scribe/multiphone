@@ -1,7 +1,10 @@
 # 24. Recording from a Keyboard into the Sequencer and Tracks
 
 ## Status
-Accepted
+Accepted. `adr/0026` fixed two real bugs in the capture mechanism
+described below (a quick tap could be missed entirely; playback could
+cascade-record itself forward) - the feature's scope and UI are
+unchanged, just the correctness of how a note gets captured.
 
 ## Context
 Live recording was a long-standing open question (`adr/0013`,

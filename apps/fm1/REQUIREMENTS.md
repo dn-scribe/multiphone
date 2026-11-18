@@ -174,7 +174,9 @@ community firmware — naming/engine concepts only, see `adr/0001`.
   Recording, while playing: the currently playing step captures
   whichever note is held, and holding through several steps ties them
   into one long note - using the same tie/slide playback as everywhere
-  else, not a separate mechanism (`adr/0024`).
+  else, not a separate mechanism (`adr/0024`; two real bugs in the
+  capture mechanism itself - a quick tap could be missed, and playback
+  could cascade-record itself forward - fixed in `adr/0026`).
 - [x] **Sequencer and Tracks merged into one tool**: a single 🔁 Loop
   toggle next to Play replaces picking between two separate roles - on
   (default) repeats forever with Chance/Condition/FILL available, off
