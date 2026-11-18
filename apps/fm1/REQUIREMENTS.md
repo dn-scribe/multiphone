@@ -12,7 +12,8 @@ naming/engine concepts only, see `adr/0001`.
   browsers are best-effort, not a blocker (`adr/0002`).
 - [x] Two phone roles — "Keyboard" and "Controls" — picked after
   host/join, kept in sync over `shared/multiphone.js` (the same
-  networking layer built for Phone Simon).
+  networking layer built for Phone Simon). Later grew to 4 roles total
+  and multi-select (a phone can run more than one at once, `adr/0023`).
 - [x] 2-operator FM voice (sine modulator, selectable carrier waveform),
   with ratio, FM amount (modulation index), ADSR, and volume as the
   full parameter set — not a 1:1 clone of Felucca's 13 engines
@@ -149,6 +150,14 @@ naming/engine concepts only, see `adr/0001`.
   you keep more than one version or move an arrangement to another
   phone/browser, since Tracks has no in-app pattern library and nothing
   in this app syncs between devices on its own (`adr/0022`).
+- [x] **A phone can run more than one role at once**: the role picker
+  is multi-select (e.g. Keyboard + Controls on one phone, Sequencer +
+  Tracks on another) instead of locking each phone to exactly one role.
+  Reuses the same multi-panel layout as Single Phone Mode; panels on
+  the same phone see each other's messages (a Keyboard note updates
+  that same phone's own Controls "now playing," a Controls patch
+  change reaches that same phone's own Keyboard) with no special
+  plumbing beyond what cross-phone messaging already does (`adr/0023`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
