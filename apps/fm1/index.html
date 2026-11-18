@@ -106,7 +106,7 @@
   <div class="topbar"><button id="instrBack">◀ Back</button></div>
   <div class="body">
     <h1>This Phone Is</h1>
-    <p class="hint">Pick what this phone does. The other phones should pick the other roles.</p>
+    <p class="hint">Pick what this phone does - tap as many as you want (e.g. Keyboard + Controls on one phone, Sequencer + Tracks on another).</p>
     <div class="grid" id="instrChoices" style="grid-template-columns:repeat(2,1fr)">
       <button class="choice" data-r="keyboard">🎹<br>Keyboard</button>
       <button class="choice" data-r="controls">🎛️<br>Controls</button>
@@ -1287,7 +1287,7 @@ function createTracksPanel(el,room){
 }
 
 // ---------- Setup wizard ----------
-let netRole=null, roomCode='', hostCode='', instrumentRole=null;
+let netRole=null, roomCode='', hostCode='', instrumentRoles=[];
 
 $('joinCode').addEventListener('input',()=>{
   $('joinCode').value=$('joinCode').value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);
@@ -1309,9 +1309,15 @@ $('joinGo').onclick=()=>{
 })();
 
 $('instrBack').onclick=()=>show(netRole==='host'?'screen-role':'screen-join');
+// Multi-select: a phone can run more than one role at once (e.g. Keyboard
+// + Controls on one phone, Sequencer + Tracks on another) - each button
+// toggles independently, same pattern as Mute/Solo elsewhere in this app.
 document.querySelectorAll('#instrChoices .choice').forEach(b=>{
-  b.onclick=()=>{document.querySelectorAll('#instrChoices .choice').forEach(x=>x.classList.remove('sel'));
-    b.classList.add('sel'); instrumentRole=b.dataset.r; $('instrGo').disabled=false};
+  b.onclick=()=>{
+    b.classList.toggle('sel');
+    instrumentRoles=Array.from(document.querySelectorAll('#instrChoices .choice.sel')).map(x=>x.dataset.r);
+    $('instrGo').disabled=instrumentRoles.length===0;
+  };
 });
 $('instrGo').onclick=()=>{
   $('instrGo').disabled=true; $('instrErr').textContent='';
@@ -1320,15 +1326,15 @@ $('instrGo').onclick=()=>{
 
 // ---------- Real cross-phone networking (shared/multiphone.js) ----------
 let room,myId,isHost=false;
-let peers={}; // id -> {role}
+let peers={}; // id -> {roles}
 let panelHandlers=[];
 
 function startHost(){
   isHost=true;
   room=Multiphone.host({
     appId:'fm1',
-    onReady:(code,id)=>{ hostCode=code; myId=id; peers[myId]={role:instrumentRole}; enterStage(); broadcastRoster(); },
-    onPeerJoin:(id,data)=>{ peers[id]={role:data.role}; broadcastRoster(); },
+    onReady:(code,id)=>{ hostCode=code; myId=id; peers[myId]={roles:instrumentRoles}; enterStage(); broadcastRoster(); },
+    onPeerJoin:(id,data)=>{ peers[id]={roles:data.roles||[]}; broadcastRoster(); },
     onPeerLeave:(id)=>{ delete peers[id]; broadcastRoster(); },
     onMessage:(msg,fromId)=>{
       if(fromId!==myId){ room.broadcast(msg); return; } // relay any client message to everyone (incl. loopback to self)
@@ -1340,7 +1346,7 @@ function startHost(){
 function startClient(){
   isHost=false;
   room=Multiphone.join({
-    appId:'fm1', code:roomCode, joinData:{role:instrumentRole},
+    appId:'fm1', code:roomCode, joinData:{roles:instrumentRoles},
     onOpen:(id)=>{ myId=id; enterStage(); },
     onMessage:routeMessage,
     onClose:()=>{ if($('screen-stage').classList.contains('on')){
@@ -1354,9 +1360,18 @@ function routeMessage(msg){
   panelHandlers.forEach(h=>h(msg));
 }
 function updateStageStatus(){
-  const others=Object.entries(peers).filter(([id])=>id!==myId).map(([,p])=>p.role);
+  const others=Object.entries(peers).filter(([id])=>id!==myId).map(([,p])=>(p.roles||[]).join('+')||'?');
   $('statusStage').textContent = others.length ? ('connected: '+others.join(', ')) : 'playing solo';
 }
+// Role -> panel, shared by enterStage() (real network) and
+// enterSinglePhoneMode() below (local room) so both build their panel
+// list the same way.
+const ROLE_PANELS={
+  keyboard: {id:'keyboard', label:'🎹 Keyboard', mount:createKeyboardPanel},
+  controls: {id:'controls', label:'🎛️ Controls', mount:createControlsPanel},
+  sequencer:{id:'sequencer',label:'🥁 Sequencer', mount:createSequencerPanel},
+  tracks:   {id:'tracks',   label:'✍️ Tracks',   mount:createTracksPanel},
+};
 function enterStage(){
   const code=roomCode||hostCode;
   $('roomPill').textContent='Room: '+code;
@@ -1367,10 +1382,21 @@ function enterStage(){
     send(msg){ if(isHost) room.broadcast(msg); else room.send(msg); },
     onMessage(cb){ panelHandlers.push(cb); },
   };
-  if(instrumentRole==='keyboard') createKeyboardPanel($('stageContent'),wrapped);
-  else if(instrumentRole==='sequencer') createSequencerPanel($('stageContent'),wrapped);
-  else if(instrumentRole==='tracks') createTracksPanel($('stageContent'),wrapped);
-  else createControlsPanel($('stageContent'),wrapped);
+  // A phone can run more than one role at once (e.g. Keyboard + Controls
+  // together) - every mounted panel shares this same `wrapped` room, and
+  // since Multiphone.host()'s broadcast() already loops a host's own
+  // messages back through its own onMessage (and a joiner's messages come
+  // back the same way via the host's re-broadcast), panels on the same
+  // phone see each other's messages for free, same as panels on different
+  // phones do. A single role skips the extra tab-bar/switcher chrome;
+  // more than one reuses the exact same multi-panel layout infra as
+  // Single Phone Mode (adr/0023).
+  const chosen=instrumentRoles.map(r=>ROLE_PANELS[r]).filter(Boolean);
+  const panels=(chosen.length?chosen:[ROLE_PANELS.controls]).map(p=>({
+    id:p.id, label:p.label, mount:(el)=>p.mount(el,wrapped),
+  }));
+  if(panels.length===1) panels[0].mount($('stageContent'));
+  else SinglePhone.mountPanels($('stageContent'),panels);
 }
 $('roomPill').onclick=openQr;
 function openQr(){
@@ -1392,16 +1418,10 @@ $('qrClose').onclick=()=>$('qrOverlay').classList.remove('on');
 function enterSinglePhoneMode(){
   show('screen-singlephone');
   const localRoom=SinglePhone.createRoom();
-  const kbPeer=localRoom.addPeer();
-  const ctPeer=localRoom.addPeer();
-  const seqPeer=localRoom.addPeer();
-  const trkPeer=localRoom.addPeer();
-  SinglePhone.mountPanels($('spContainer'),[
-    {id:'keyboard', label:'🎹 Keyboard', mount:(el)=>createKeyboardPanel(el,kbPeer)},
-    {id:'controls', label:'🎛️ Controls', mount:(el)=>createControlsPanel(el,ctPeer)},
-    {id:'sequencer', label:'🥁 Sequencer', mount:(el)=>createSequencerPanel(el,seqPeer)},
-    {id:'tracks', label:'✍️ Tracks', mount:(el)=>createTracksPanel(el,trkPeer)},
-  ]);
+  const panels=Object.values(ROLE_PANELS).map(p=>({
+    id:p.id, label:p.label, mount:(el)=>p.mount(el,localRoom.addPeer()),
+  }));
+  SinglePhone.mountPanels($('spContainer'),panels);
 }
 
 document.addEventListener('contextmenu',e=>e.preventDefault());
