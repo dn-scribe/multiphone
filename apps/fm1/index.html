@@ -1022,6 +1022,12 @@ function createTracksPanel(el,room){
         <button class="choice small" type="button" data-len="64">64</button>
         <button class="choice small" type="button" data-len="128">128</button>
       </div>
+      <label class="ctlLabel">Save / Load ⓘ</label>
+      <div class="grid" style="grid-template-columns:repeat(2,1fr)">
+        <button class="choice small exportBtn" type="button">⬇️ Export</button>
+        <button class="choice small importBtn" type="button">⬆️ Import</button>
+      </div>
+      <input type="file" class="importFile" accept="application/json,.json" style="display:none">
       <p class="hint" style="padding:4px 0 0">This tool never loops - Play runs the whole arrangement once and stops. Tap a step: on/off. Hold a step: accent. Drag across steps: tie them into one long note. Track's ✏️: pick a step to set pitch/tie/slide/ratchet.</p>
       <div class="seqTracks"></div>
     </div>`;
@@ -1205,6 +1211,63 @@ function createTracksPanel(el,room){
     updateCurHighlight();
   }
   attachTooltip(q('.trkPlay'),'Plays through the whole arrangement once from the start, then stops - this tool never loops.',()=>{ playing?stop():start(); });
+
+  // Export/Import: Tracks holds exactly one arrangement at a time
+  // (adr/0019), auto-saved to this phone only - there's no in-app
+  // named-pattern library like the Sequencer's. A downloadable/
+  // uploadable file is how you keep more than one version, or move an
+  // arrangement to another phone/browser, since localStorage never
+  // syncs on its own (adr/0007). See adr/0022.
+  function exportArrangement(){
+    const data={appId:'fm1-tracks',schema:1,len:trackLen,bpm,swing,
+      tracks:tracks.map(t=>({instrumentKey:t.instrumentKey,muted:t.muted,solo:t.solo,
+        steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,note:s.note,tie:s.tie,slide:s.slide}))}))};
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url;
+    a.download='fm1-track-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function applyImportedData(data){
+    if(!data||data.appId!=='fm1-tracks'||!Array.isArray(data.tracks)||data.tracks.length!==4){
+      alert('That file doesn\'t look like a Tracks export.'); return;
+    }
+    trackLen=Math.max(1,+data.len||32); lsSet('trkLen',trackLen);
+    bpm=Math.max(60,Math.min(200,+data.bpm||120)); lsSet('trkBpm',bpm);
+    swing=Math.max(50,Math.min(75,+data.swing||50)); lsSet('trkSwing',swing);
+    tracks=data.tracks.map((t,idx)=>({
+      instrumentKey:t.instrumentKey||TRACK_DEFAULT_KEYS[idx],
+      muted:!!t.muted, solo:!!t.solo, editMode:false, editIndex:0,
+      steps:resizeSteps((Array.isArray(t.steps)?t.steps:[]).map(s=>({
+        on:!!s.on, accent:!!s.accent, ratchet:s.ratchet!=null?s.ratchet:1, chance:100, condition:'all',
+        note:s.note!=null?s.note:DEFAULT_NOTE, tie:!!s.tie, slide:!!s.slide,
+      })),trackLen),
+    }));
+    saveTracks();
+    q('.sBpm').value=bpm; q('.vBpm').textContent=bpm+' BPM';
+    q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
+    el.querySelectorAll('.lenChoices .choice').forEach(x=>x.classList.toggle('sel',+x.dataset.len===trackLen));
+    renderTracks();
+  }
+  function importArrangementFromFile(file){
+    const reader=new FileReader();
+    reader.onload=()=>{
+      let data; try{ data=JSON.parse(reader.result); }catch(e){ alert('That file isn\'t valid JSON.'); return; }
+      if(!confirm('Replace the current arrangement with this file? This can\'t be undone.')) return;
+      applyImportedData(data);
+    };
+    reader.onerror=()=>alert('Could not read that file.');
+    reader.readAsText(file);
+  }
+  attachTooltip(q('.exportBtn'),'Download the current arrangement as a file - keep it as a backup, or load it on another phone/browser.',exportArrangement);
+  attachTooltip(q('.importBtn'),'Load an arrangement from a file exported here. Replaces what\'s currently loaded.',()=>q('.importFile').click());
+  q('.importFile').addEventListener('change',()=>{
+    const file=q('.importFile').files[0];
+    if(file) importArrangementFromFile(file);
+    q('.importFile').value='';
+  });
+
   q('.sBpm').value=bpm; q('.vBpm').textContent=bpm+' BPM';
   q('.sBpm').addEventListener('input',()=>{ bpm=+q('.sBpm').value; q('.vBpm').textContent=bpm+' BPM'; lsSet('trkBpm',bpm); });
   q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
