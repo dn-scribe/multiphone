@@ -158,6 +158,14 @@ naming/engine concepts only, see `adr/0001`.
   that same phone's own Controls "now playing," a Controls patch
   change reaches that same phone's own Keyboard) with no special
   plumbing beyond what cross-phone messaging already does (`adr/0023`).
+- [x] **Recording from a Keyboard**: both the Sequencer and Tracks gained
+  a per-track ⏺ Record button, and a Keyboard's notes now reach both
+  tools. Edit mode (not recording): playing a key sets the selected
+  step's pitch instantly, a faster alternative to the pitch stepper.
+  Recording, while playing: the currently playing step captures
+  whichever note is held, and holding through several steps ties them
+  into one long note - using the same tie/slide playback as everywhere
+  else, not a separate mechanism (`adr/0024`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -185,8 +193,9 @@ naming/engine concepts only, see `adr/0001`.
 - [ ] Sequencer: true continuous per-step velocity, not just the
   binary accent built in Phase 2.
 - [ ] Sequencer: chords (a step playing more than one note at once);
-  parameter locks; live recording by listening for the Keyboard's own
-  `note` messages, with quantize (`adr/0016`).
+  parameter locks (`adr/0016`). Live recording itself is now built
+  (`adr/0024`), but with no separate, adjustable quantize amount - a
+  note always lands on whichever step is current at that tick.
 - [ ] Sequencer: a scale-locked pitch picker (e.g. "stay in C major")
   instead of raw semitone-by-semitone stepping.
 - [ ] Song: no reordering UI (remove + re-add via ➕ is the current
