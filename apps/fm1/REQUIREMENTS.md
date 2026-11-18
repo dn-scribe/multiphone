@@ -32,9 +32,10 @@ naming/engine concepts only, see `adr/0001`.
 - [x] Keyboard UI: flat piano-style keys (white/black coloring, not
   true piano key shapes), with octave up/down buttons (range octave
   1-7). Multi-touch works for free since each key is its own element
-  with its own pointer handlers. Shows 2 octaves in portrait, 3 in
-  landscape (smaller keys), following device orientation live
-  (`adr/0017`).
+  with its own pointer handlers. Always 2 octaves, following device
+  orientation live: one straight row in landscape, two stacked
+  organ-style rows (one octave each, normal key width) in portrait
+  (`adr/0017`, `adr/0020`).
 - [x] Controls UI: 4 quick presets (E.Piano, Bell, Bass, Brass), carrier
   waveform picker, and sliders for ratio / FM amount / attack / decay /
   sustain / release / volume. Shows a "now playing" readout driven by
