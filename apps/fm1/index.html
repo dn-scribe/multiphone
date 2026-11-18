@@ -255,14 +255,19 @@ function fireTrackStep(track,s,si,intervalMs,room){
   const basePatch=Object.assign({},inst.patch,{vol:inst.patch.vol*(s.accent?1.0:0.72)});
   const freq=noteToFreq(s.note);
   const tieExtra=legatoExtensionSteps(track.steps,si)*intervalMs;
+  // `synth:true` marks these as playback echoes, not real Keyboard input -
+  // sent only so Controls' "now playing" can reflect them too. Without it,
+  // a recording track's own played-back notes would be mistaken for fresh
+  // Keyboard input and re-recorded onto whatever step is current *then*,
+  // cascading forward one step at a time every loop (adr/0026).
   if(s.slide && track._lastVoice){
     const v=track._lastVoice;
     slideVoiceToFreq(v,basePatch,freq,intervalMs*0.8);
-    room.send({t:'note',note:s.note,on:true});
+    room.send({t:'note',note:s.note,on:true,synth:true});
     const holdMs=Math.max(20,intervalMs*0.6)+tieExtra;
     setTimeout(()=>{
       if(track._lastVoice===v){ releaseVoice(v,basePatch); track._lastVoice=null; }
-      room.send({t:'note',note:s.note,on:false});
+      room.send({t:'note',note:s.note,on:false,synth:true});
     },holdMs);
     return;
   }
@@ -271,12 +276,12 @@ function fireTrackStep(track,s,si,intervalMs,room){
     setTimeout(()=>{
       const v=triggerVoice(basePatch,freq);
       track._lastVoice=v;
-      room.send({t:'note',note:s.note,on:true});
+      room.send({t:'note',note:s.note,on:true,synth:true});
       const holdMs=Math.max(20,slice*0.6)+(r===n-1?tieExtra:0);
       setTimeout(()=>{
         if(track._lastVoice===v){ releaseVoice(v,basePatch); track._lastVoice=null; }
         else releaseVoice(v,basePatch);
-        room.send({t:'note',note:s.note,on:false});
+        room.send({t:'note',note:s.note,on:false,synth:true});
       },holdMs);
     },r*slice);
   }
@@ -948,29 +953,42 @@ function createTracksPanel(el,room){
   }
   function updateCurHighlight(){ curHighlighters.forEach(r=>r()); }
 
-  // Keyboard recording (adr/0024): tracks whichever note is currently
-  // held on a connected Keyboard (last one wins if more than one
-  // overlaps, same "last note" convention Controls' preview already
-  // uses - adr/0004/0009/0015). Two uses: (1) a track in edit mode
-  // (and not recording) gets its selected step's pitch set the instant
-  // a key is struck - no network wait, just whatever this phone's own
-  // Keyboard panel would also hear if multi-role (adr/0023). (2) a
-  // recording track captures the held note into the CURRENTLY PLAYING
-  // step every tick, tying consecutive steps together for as long as
-  // the same note stays held.
-  let liveNote=null, liveNoteFreshOnset=false;
+  // Keyboard recording (adr/0024, fixed in adr/0026): tracks whichever
+  // note is currently held on a connected Keyboard (last one wins if
+  // more than one overlaps, same "last note" convention Controls'
+  // preview already uses - adr/0004/0009/0015). Two uses: (1) a track
+  // in edit mode (and not recording) gets its selected step's pitch set
+  // the instant a key is struck - no network wait, just whatever this
+  // phone's own Keyboard panel would also hear if multi-role
+  // (adr/0023). (2) a recording track captures a note the moment it's
+  // struck, into whichever step is current *right then* - not on the
+  // next tick, which would miss a short tap whose note-on and note-off
+  // both land between two ticks before any tick ever gets to check "is
+  // a note still held." A held note then keeps extending onto
+  // subsequent steps via the per-tick check below, for as long as it
+  // stays held. `liveNoteLastStep` guards against writing the same step
+  // twice (once here, once from the tick() sustain-check below) when a
+  // note-on happens to land on a step tick() hasn't reached yet -
+  // without it, that step's own fresh-onset write gets overwritten with
+  // tie:true by the sustain-check right after.
+  let liveNote=null, liveNoteLastStep=-1;
   room.onMessage(msg=>{
-    if(msg.t!=='note') return;
+    if(msg.t!=='note'||msg.synth) return; // ignore our own playback echoes - see fireTrackStep
     if(msg.on){
-      liveNote=msg.note; liveNoteFreshOnset=true;
+      liveNote=msg.note;
       tracks.forEach(track=>{
         if(track.editMode&&!track.recording){
           const s=track.steps[track.editIndex];
           s.on=true; s.note=msg.note; saveTracks(); renderTrackDetail(track);
           if(track._stepRefreshers) track._stepRefreshers[track.editIndex]();
+        } else if(track.recording&&playing&&stepIndex!==liveNoteLastStep){
+          const s=track.steps[stepIndex];
+          s.on=true; s.note=msg.note; s.tie=liveNoteLastStep!==-1; s.accent=false; s.ratchet=1; s.slide=false;
+          if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
         }
       });
-    } else if(liveNote===msg.note){ liveNote=null; }
+      liveNoteLastStep=stepIndex;
+    } else if(liveNote===msg.note){ liveNote=null; liveNoteLastStep=-1; }
   });
 
   function tick(){
@@ -999,15 +1017,19 @@ function createTracksPanel(el,room){
     });
     // Capture AFTER this pass's firing, so a just-played note doesn't
     // also retrigger synthesized audio on the very same step - it only
-    // starts actually sounding from the step grid on the next loop.
-    tracks.forEach(track=>{
-      if(track.recording&&liveNote!=null){
-        const s=track.steps[stepIndex];
-        s.on=true; s.note=liveNote; s.tie=!liveNoteFreshOnset; s.accent=false; s.ratchet=1; s.slide=false;
-        liveNoteFreshOnset=false;
-        if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
-      }
-    });
+    // starts actually sounding from the step grid on the next loop. The
+    // stepIndex!==liveNoteLastStep guard skips a step the note-on
+    // handler above already wrote for this same held note.
+    if(liveNote!=null&&stepIndex!==liveNoteLastStep){
+      tracks.forEach(track=>{
+        if(track.recording){
+          const s=track.steps[stepIndex];
+          s.on=true; s.note=liveNote; s.tie=liveNoteLastStep!==-1; s.accent=false; s.ratchet=1; s.slide=false;
+          if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
+        }
+      });
+      liveNoteLastStep=stepIndex;
+    }
     // End of the pattern: with Loop off and not chaining a Song, stop
     // after this one pass instead of wrapping back to step 0 - the
     // Track Writer's original non-looping behavior (adr/0019). Song mode
