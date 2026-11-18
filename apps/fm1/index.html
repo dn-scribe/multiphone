@@ -82,7 +82,7 @@
   <div class="topbar"><a href="../../">◀ Home</a></div>
   <div class="body">
     <h1>FM-1 Clone</h1>
-    <p class="hint">One tiny FM synth, played across your phones: a Keyboard, a Controls, a looping Sequencer, and a non-looping Tracks writer. One phone hosts, the rest join with a room code.</p>
+    <p class="hint">One tiny FM synth, played across your phones: a Keyboard, a Controls, and Tracks (a step editor that can loop or play once). One phone hosts, the rest join with a room code.</p>
     <div class="grid">
       <button class="choice" id="btnHost">HOST</button>
       <button class="choice" id="btnJoin">JOIN</button>
@@ -107,11 +107,10 @@
   <div class="topbar"><button id="instrBack">◀ Back</button></div>
   <div class="body">
     <h1>This Phone Is</h1>
-    <p class="hint">Pick what this phone does - tap as many as you want (e.g. Keyboard + Controls on one phone, Sequencer + Tracks on another).</p>
-    <div class="grid" id="instrChoices" style="grid-template-columns:repeat(2,1fr)">
+    <p class="hint">Pick what this phone does - tap as many as you want (e.g. Keyboard + Controls on one phone, Tracks on another).</p>
+    <div class="grid" id="instrChoices" style="grid-template-columns:repeat(3,1fr)">
       <button class="choice" data-r="keyboard">🎹<br>Keyboard</button>
       <button class="choice" data-r="controls">🎛️<br>Controls</button>
-      <button class="choice" data-r="sequencer">🥁<br>Sequencer</button>
       <button class="choice" data-r="tracks">✍️<br>Tracks</button>
     </div>
     <button class="big" id="instrGo" disabled>Continue</button>
@@ -617,11 +616,21 @@ function createControlsPanel(el,room){
 // this still doesn't have). Timing is a self-rescheduling setTimeout
 // chain (not sample-accurate lookahead scheduling - see adr/0010) so
 // swing's per-step variable delay is easy to express.
-function createSequencerPanel(el,room){
+// Tracks: the merged step/track editor (adr/0025) - what used to be two
+// separate roles, the looping Sequencer (adr/0010-0014) and the
+// non-looping Track Writer (adr/0019), are now one tool with a single
+// 🔁 Loop toggle instead of two different tools to pick between. Loop on
+// behaves like the old Sequencer (repeats forever, Chance/Condition/FILL/
+// Song mode apply); Loop off behaves like the old Track Writer (Play runs
+// the pattern once and stops, no Chance/Condition/FILL). Everything else -
+// saved patterns + Song, file Export/Import, per-step pitch/tie/slide/
+// ratchet, drag-to-tie, Keyboard recording - is shared across both.
+function createTracksPanel(el,room){
   el.innerHTML=`
     <div class="body">
       <div class="seqTransport">
         <button class="octBtn seqPlay" type="button">▶️ Play</button>
+        <button class="octBtn loopBtn" type="button">🔁 Loop: On</button>
         <button class="octBtn fillBtn" type="button">FILL</button>
       </div>
       <label class="ctlLabel">Tempo <span class="vBpm"></span></label>
@@ -629,10 +638,11 @@ function createSequencerPanel(el,room){
       <label class="ctlLabel">Swing <span class="vSwing"></span></label>
       <input type="range" class="sSwing" min="50" max="75" step="1">
       <label class="ctlLabel">Pattern length</label>
-      <div class="grid lenChoices" style="grid-template-columns:repeat(3,1fr)">
+      <div class="grid lenChoices" style="grid-template-columns:repeat(4,1fr)">
         <button class="choice small" type="button" data-len="16">16</button>
         <button class="choice small" type="button" data-len="32">32</button>
         <button class="choice small" type="button" data-len="64">64</button>
+        <button class="choice small" type="button" data-len="128">128</button>
       </div>
       <label class="ctlLabel">Patterns <span style="font-weight:400">(tap: load · hold: delete · ➕: add to song)</span></label>
       <div class="patternList"></div>
@@ -641,7 +651,13 @@ function createSequencerPanel(el,room){
       <button class="octBtn songModeBtn" type="button">Song Mode: Off</button>
       <p class="hint songStatus" style="padding:2px 0;min-height:20px"></p>
       <div class="songList"></div>
-      <p class="hint" style="padding:4px 0 0">Tap a step: on/off. Hold a step: accent. Drag across steps: tie them into one long note. Track's ✏️: pick a step to set pitch/tie/slide/ratchet/chance/condition.</p>
+      <label class="ctlLabel">Save / Load as a file ⓘ</label>
+      <div class="grid" style="grid-template-columns:repeat(2,1fr)">
+        <button class="choice small exportBtn" type="button">⬇️ Export</button>
+        <button class="choice small importBtn" type="button">⬆️ Import</button>
+      </div>
+      <input type="file" class="importFile" accept="application/json,.json" style="display:none">
+      <p class="hint gestureHint" style="padding:4px 0 0"></p>
       <div class="seqTracks"></div>
     </div>`;
   const q=sel=>el.querySelector(sel);
@@ -652,6 +668,7 @@ function createSequencerPanel(el,room){
   let patternLen=lsGet('seqLen',16);
   let bpm=lsGet('seqBpm',120);
   let swing=lsGet('seqSwing',50);
+  let loop=lsGet('loop',true); // default true: continuity for anyone who only ever knew this as the Sequencer
   let tracks=lsGet('seqTracks',null);
   if(!Array.isArray(tracks)||tracks.length!==4){
     tracks=TRACK_DEFAULT_KEYS.map(instrumentKey=>({instrumentKey,muted:false,solo:false,steps:newSteps(patternLen)}));
@@ -685,11 +702,12 @@ function createSequencerPanel(el,room){
         note:s.note,tie:s.tie,slide:s.slide}))};
   }
   function snapshotPattern(name){
-    return {id:Date.now()+'-'+Math.random().toString(36).slice(2,6),name,patternLen,swing,tracks:tracks.map(cloneTrackForSave)};
+    return {id:Date.now()+'-'+Math.random().toString(36).slice(2,6),name,patternLen,swing,loop,tracks:tracks.map(cloneTrackForSave)};
   }
   function applyPattern(p){
     patternLen=p.patternLen; swing=p.swing;
-    lsSet('seqLen',patternLen); lsSet('seqSwing',swing);
+    loop=p.loop!=null?!!p.loop:true; // patterns saved before adr/0025 had no loop flag - they were always-looping Sequencer patterns
+    lsSet('seqLen',patternLen); lsSet('seqSwing',swing); lsSet('loop',loop);
     tracks=p.tracks.map(t=>({
       instrumentKey:t.instrumentKey, muted:t.muted, solo:t.solo,
       steps:resizeSteps(t.steps.map(s=>({on:s.on,accent:s.accent,
@@ -700,6 +718,7 @@ function createSequencerPanel(el,room){
     saveTracks();
     q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
     el.querySelectorAll('.lenChoices .choice').forEach(x=>x.classList.toggle('sel',+x.dataset.len===patternLen));
+    updateLoopUI();
     renderTracks();
   }
   function renderPatterns(){
@@ -850,14 +869,20 @@ function createSequencerPanel(el,room){
     attachTooltip(rLabel,'How many times this step re-triggers, evenly spaced within it.');
     panel.appendChild(rLabel);
     panel.appendChild(pickerRow(track,RATCHETS.map(n=>[n,n+'x']),v=>s.ratchet===v,v=>{ s.ratchet=v; }));
-    const cLabel=document.createElement('div'); cLabel.className='ctlLabel'; cLabel.textContent='Chance ⓘ';
-    attachTooltip(cLabel,'The odds this step actually plays, checked fresh every time the pattern loops around to it.');
-    panel.appendChild(cLabel);
-    panel.appendChild(pickerRow(track,CHANCES.map(n=>[n,n+'%']),v=>s.chance===v,v=>{ s.chance=v; }));
-    const kLabel=document.createElement('div'); kLabel.className='ctlLabel'; kLabel.textContent='Condition ⓘ';
-    attachTooltip(kLabel,'All = every loop. 1:2/2:2 = only odd/even-numbered loops. Fill = only while holding the FILL button.');
-    panel.appendChild(kLabel);
-    panel.appendChild(pickerRow(track,CONDITIONS,v=>s.condition===v,v=>{ s.condition=v; }));
+    // Chance/Condition are loop-repetition concepts - nothing to attach to
+    // in a pattern that only ever plays once, so they're hidden (not
+    // cleared - toggling Loop back on restores whatever was set) while
+    // Loop is off (adr/0025).
+    if(loop){
+      const cLabel=document.createElement('div'); cLabel.className='ctlLabel'; cLabel.textContent='Chance ⓘ';
+      attachTooltip(cLabel,'The odds this step actually plays, checked fresh every time the pattern loops around to it.');
+      panel.appendChild(cLabel);
+      panel.appendChild(pickerRow(track,CHANCES.map(n=>[n,n+'%']),v=>s.chance===v,v=>{ s.chance=v; }));
+      const kLabel=document.createElement('div'); kLabel.className='ctlLabel'; kLabel.textContent='Condition ⓘ';
+      attachTooltip(kLabel,'All = every loop. 1:2/2:2 = only odd/even-numbered loops. Fill = only while holding the FILL button.');
+      panel.appendChild(kLabel);
+      panel.appendChild(pickerRow(track,CONDITIONS,v=>s.condition===v,v=>{ s.condition=v; }));
+    }
   }
 
   function renderTracks(){
@@ -983,6 +1008,13 @@ function createSequencerPanel(el,room){
         if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
       }
     });
+    // End of the pattern: with Loop off and not chaining a Song, stop
+    // after this one pass instead of wrapping back to step 0 - the
+    // Track Writer's original non-looping behavior (adr/0019). Song mode
+    // always wraps regardless of Loop - the Song itself decides when to
+    // advance/repeat via each entry's own repeat count, same as before
+    // this merge (adr/0014); Loop only governs *standalone* playback.
+    if(stepIndex>=patternLen-1 && !loop && !songMode){ stop(); return; }
     const delay=delayAfterStep(stepIndex);
     stepIndex=(stepIndex+1)%patternLen;
     if(playing) timer=setTimeout(tick,delay);
@@ -1007,7 +1039,18 @@ function createSequencerPanel(el,room){
     updateCurHighlight();
     updateSongStatus();
   }
-  attachTooltip(q('.seqPlay'),'Play or stop the current pattern - or the whole Song, if Song Mode is on.',()=>{ playing?stop():start(); });
+  attachTooltip(q('.seqPlay'),'Play or stop - loops forever if Loop is on, otherwise runs once and stops. Or the whole Song, if Song Mode is on.',()=>{ playing?stop():start(); });
+  function updateLoopUI(){
+    q('.loopBtn').textContent='🔁 Loop: '+(loop?'On':'Off');
+    q('.loopBtn').classList.toggle('active',loop);
+    q('.fillBtn').style.display=loop?'':'none';
+    q('.gestureHint').textContent='Tap a step: on/off. Hold a step: accent. Drag across steps: tie them into one long note. Track\'s ✏️: pick a step to set pitch/tie/slide/ratchet'
+      +(loop?'/chance/condition.':'.')+(loop?'':' Play runs once and stops, since Loop is off.');
+    tracks.forEach(t=>{ if(t.editMode) renderTrackDetail(t); });
+  }
+  attachTooltip(q('.loopBtn'),'On: Play repeats this pattern forever, like a loop station - Chance/Condition/FILL apply. Off: Play runs it once and stops, like a written part.',()=>{
+    loop=!loop; lsSet('loop',loop); updateLoopUI();
+  });
   attachTooltip(q('.savePatternBtn'),'Save the current tracks/steps as a pattern you can reload later or add to a Song.',()=>{
     const name=(prompt('Name this pattern:')||'').trim().slice(0,24);
     if(!name) return;
@@ -1017,7 +1060,7 @@ function createSequencerPanel(el,room){
     q('.songModeBtn').textContent='Song Mode: '+(songMode?'On':'Off');
     q('.songModeBtn').classList.toggle('active',songMode);
   }
-  attachTooltip(q('.songModeBtn'),'On: Play runs through your whole Song instead of looping just this one pattern.',()=>{
+  attachTooltip(q('.songModeBtn'),'On: Play runs through your whole Song instead of just this one pattern.',()=>{
     songMode=!songMode; lsSet('songMode',songMode); refreshSongModeBtn(); updateSongStatus();
   });
   refreshSongModeBtn();
@@ -1039,283 +1082,20 @@ function createSequencerPanel(el,room){
       renderTracks();
     };
   });
-  renderPatterns();
-  renderSong();
-  renderTracks();
-}
 
-// Track Writer: a 4th role, for full non-repeating linear arrangements -
-// inspired by Felucca's own separate Piano Roll page (distinct from its
-// step Sequencer page) for "drawing... and stretching notes... with the
-// mouse" (see adr/0019). Unlike the Sequencer, Play runs through the
-// pattern once and stops - there's no loop, no Song mode, no per-step
-// chance/condition (those are loop-repetition devices with nothing to
-// attach to in a part that only ever plays once), and no saved-pattern
-// library (one arrangement at a time per phone, auto-persisted). Per-step
-// pitch/tie/slide/ratchet/accent and the drag-to-tie gesture are fully
-// shared with the Sequencer via the global
-// fireTrackStep/legatoExtensionSteps/drawTieRun/attachStepsInteraction
-// helpers above.
-function createTracksPanel(el,room){
-  el.innerHTML=`
-    <div class="body">
-      <div class="seqTransport">
-        <button class="octBtn trkPlay" type="button">▶️ Play</button>
-      </div>
-      <label class="ctlLabel">Tempo <span class="vBpm"></span></label>
-      <input type="range" class="sBpm" min="60" max="200" step="1">
-      <label class="ctlLabel">Swing <span class="vSwing"></span></label>
-      <input type="range" class="sSwing" min="50" max="75" step="1">
-      <label class="ctlLabel">Length</label>
-      <div class="grid lenChoices" style="grid-template-columns:repeat(3,1fr)">
-        <button class="choice small" type="button" data-len="32">32</button>
-        <button class="choice small" type="button" data-len="64">64</button>
-        <button class="choice small" type="button" data-len="128">128</button>
-      </div>
-      <label class="ctlLabel">Save / Load ⓘ</label>
-      <div class="grid" style="grid-template-columns:repeat(2,1fr)">
-        <button class="choice small exportBtn" type="button">⬇️ Export</button>
-        <button class="choice small importBtn" type="button">⬆️ Import</button>
-      </div>
-      <input type="file" class="importFile" accept="application/json,.json" style="display:none">
-      <p class="hint" style="padding:4px 0 0">This tool never loops - Play runs the whole arrangement once and stops. Tap a step: on/off. Hold a step: accent. Drag across steps: tie them into one long note. Track's ✏️: pick a step to set pitch/tie/slide/ratchet.</p>
-      <div class="seqTracks"></div>
-    </div>`;
-  const q=sel=>el.querySelector(sel);
-  const RATCHETS=[1,2,3,4];
-
-  let trackLen=lsGet('trkLen',32);
-  let bpm=lsGet('trkBpm',120);
-  let swing=lsGet('trkSwing',50);
-  let tracks=lsGet('trkTracks',null);
-  if(!Array.isArray(tracks)||tracks.length!==4){
-    tracks=TRACK_DEFAULT_KEYS.map(instrumentKey=>({instrumentKey,muted:false,solo:false,steps:newSteps(trackLen)}));
-  } else {
-    tracks.forEach(t=>{
-      t.steps=resizeSteps(t.steps,trackLen);
-      t.steps.forEach(s=>{
-        if(s.ratchet==null) s.ratchet=1; if(s.note==null) s.note=DEFAULT_NOTE;
-        if(s.tie==null) s.tie=false; if(s.slide==null) s.slide=false;
-        s.chance=100; s.condition='all'; // Track Writer never uses these - keep the shared step shape honest
-      });
-      t.editIndex=0;
-    });
-  }
-  // `recording` is a runtime-only flag (adr/0024) - never persisted, so a
-  // reload always comes back with it off, same reasoning as `playing`.
-  tracks.forEach(t=>{ if(t.editIndex==null) t.editIndex=0; t.recording=false; });
-  function saveTracks(){ lsSet('trkTracks',tracks); }
-
-  let playing=false, timer=null, stepIndex=0;
-  let curHighlighters=[];
-  function baseIntervalMs(){ return 60000/bpm/4; }
-  function delayAfterStep(i){
-    const pair=2*baseIntervalMs(), frac=swing/100;
-    return i%2===0 ? pair*frac : pair*(1-frac);
-  }
-
-  function makeStepButton(track,si){
-    const b=document.createElement('button'); b.type='button';
-    function refresh(){
-      const s=track.steps[si];
-      const editing=track.editMode&&track.editIndex===si;
-      b.className='seqStep'+(s.on?' on':'')+(s.on&&s.accent?' accent':'')+(playing&&stepIndex===si?' cur':'')+(editing?' editing':'');
-    }
-    refresh();
-    return {el:b,refresh};
-  }
-  function pickerRow(track,options,isActive,onPick){
-    const row=document.createElement('div'); row.className='grid'; row.style.gridTemplateColumns=`repeat(${options.length},1fr)`;
-    options.forEach(opt=>{
-      const [value,label]=Array.isArray(opt)?opt:[opt,String(opt)];
-      const b=document.createElement('button'); b.type='button'; b.className='choice small'+(isActive(value)?' sel':'');
-      b.textContent=label;
-      b.onclick=()=>{ onPick(value); saveTracks(); renderTrackDetail(track); };
-      row.appendChild(b);
-    });
-    return row;
-  }
-  function noteRow(track,s){
-    const row=document.createElement('div'); row.className='octRow';
-    const octDec=document.createElement('button'); octDec.type='button'; octDec.className='octBtn'; octDec.textContent='◀◀';
-    const dec=document.createElement('button'); dec.type='button'; dec.className='octBtn'; dec.textContent='◀';
-    const label=document.createElement('div'); label.className='octLabel';
-    label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1);
-    const inc=document.createElement('button'); inc.type='button'; inc.className='octBtn'; inc.textContent='▶';
-    const octInc=document.createElement('button'); octInc.type='button'; octInc.className='octBtn'; octInc.textContent='▶▶';
-    function updateLabel(){ label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1); }
-    function step(delta){ s.note=Math.max(24,Math.min(108,s.note+delta)); updateLabel(); }
-    function commit(){ saveTracks(); }
-    attachRepeatableTap(dec,()=>step(-1),commit);
-    attachRepeatableTap(inc,()=>step(1),commit);
-    attachRepeatableTap(octDec,()=>step(-12),commit);
-    attachRepeatableTap(octInc,()=>step(12),commit);
-    row.append(octDec,dec,label,inc,octInc);
-    return row;
-  }
-  function renderTrackDetail(track){
-    const panel=track._detailEl; if(!panel) return;
-    panel.innerHTML='';
-    if(!track.editMode){ panel.style.display='none'; return; }
-    panel.style.display='block';
-    const s=track.steps[track.editIndex];
-    const title=document.createElement('div'); title.className='ctlLabel'; title.textContent='Step '+(track.editIndex+1);
-    panel.appendChild(title);
-    const pLabel=document.createElement('div'); pLabel.className='ctlLabel'; pLabel.textContent='Pitch ⓘ';
-    attachTooltip(pLabel,'This step\'s note. ◀▶ moves a semitone, ◀◀▶▶ jumps an octave - hold either to repeat. Tie and slide only make sense relative to the step before them.');
-    panel.appendChild(pLabel);
-    panel.appendChild(noteRow(track,s));
-    if(s.tie){
-      const tieHint=document.createElement('p'); tieHint.className='hint'; tieHint.style.padding='2px 0';
-      tieHint.textContent='This step is tied, so it never retriggers - its own pitch above has no audible effect. The sound comes from whichever earlier step started this tied run.';
-      panel.appendChild(tieHint);
-    }
-    const tsRow=document.createElement('div'); tsRow.className='grid'; tsRow.style.gridTemplateColumns='repeat(2,1fr)'; tsRow.style.paddingTop='4px';
-    const tieBtn=document.createElement('button'); tieBtn.type='button'; tieBtn.className='choice small'+(s.tie?' sel':'');
-    tieBtn.textContent='Tie: '+(s.tie?'On':'Off');
-    attachTooltip(tieBtn,'Tie: don\'t retrigger here - let the previous note keep ringing through this step instead.',
-      ()=>{ s.tie=!s.tie; saveTracks(); renderTrackDetail(track); });
-    const slideBtn=document.createElement('button'); slideBtn.type='button'; slideBtn.className='choice small'+(s.slide?' sel':'');
-    slideBtn.textContent='Slide: '+(s.slide?'On':'Off');
-    attachTooltip(slideBtn,'Slide: glide from the previous note\'s pitch into this one instead of a hard retrigger.',
-      ()=>{ s.slide=!s.slide; saveTracks(); renderTrackDetail(track); });
-    tsRow.append(tieBtn,slideBtn);
-    panel.appendChild(tsRow);
-    const rLabel=document.createElement('div'); rLabel.className='ctlLabel'; rLabel.textContent='Ratchet ⓘ';
-    attachTooltip(rLabel,'How many times this step re-triggers, evenly spaced within it.');
-    panel.appendChild(rLabel);
-    panel.appendChild(pickerRow(track,RATCHETS.map(n=>[n,n+'x']),v=>s.ratchet===v,v=>{ s.ratchet=v; }));
-  }
-
-  function renderTracks(){
-    const wrap=q('.seqTracks'); wrap.innerHTML=''; curHighlighters=[];
-    tracks.forEach(track=>{
-      const trackEl=document.createElement('div'); trackEl.className='seqTrack';
-      const head=document.createElement('div'); head.className='seqTrackHead';
-      const instBtn=document.createElement('button'); instBtn.type='button'; instBtn.className='trackBtn presetBtn';
-      instBtn.textContent=resolveInstrument(track.instrumentKey).label;
-      attachTooltip(instBtn,'Tap to cycle this track\'s instrument.',()=>{
-        const list=allInstruments(); const idx=list.findIndex(i=>i.key===track.instrumentKey);
-        track.instrumentKey=list[(idx+1)%list.length].key;
-        instBtn.textContent=resolveInstrument(track.instrumentKey).label; saveTracks();
-      });
-      const muteBtn=document.createElement('button'); muteBtn.type='button'; muteBtn.textContent='M';
-      muteBtn.className='trackBtn muteBtn'+(track.muted?' active':'');
-      attachTooltip(muteBtn,'Mute: silences this track, even while Play is running.',()=>{
-        track.muted=!track.muted; muteBtn.classList.toggle('active',track.muted); saveTracks();
-      });
-      const soloBtn=document.createElement('button'); soloBtn.type='button'; soloBtn.textContent='S';
-      soloBtn.className='trackBtn soloBtn'+(track.solo?' active':'');
-      attachTooltip(soloBtn,'Solo: while any track is soloed, only soloed tracks play - everything else goes quiet, even if not muted.',()=>{
-        track.solo=!track.solo; soloBtn.classList.toggle('active',track.solo); saveTracks();
-      });
-      const recBtn=document.createElement('button'); recBtn.type='button'; recBtn.textContent='⏺';
-      recBtn.className='trackBtn recBtn'+(track.recording?' active':'');
-      attachTooltip(recBtn,'Record: while this plays, notes you play on a connected Keyboard are written into the current step live - keep holding a note through several steps to tie them into one long note.',()=>{
-        track.recording=!track.recording;
-        if(track.recording&&track.editMode){ track.editMode=false; editBtn.classList.remove('active'); renderTrackDetail(track); }
-        recBtn.classList.toggle('active',track.recording);
-        if(!track.recording) saveTracks(); // commit what was recorded
-      });
-      const editBtn=document.createElement('button'); editBtn.type='button'; editBtn.textContent='✏️';
-      editBtn.className='trackBtn editBtn'+(track.editMode?' active':'');
-      attachTooltip(editBtn,'Edit mode: tap a step to select it, then set its pitch/tie/slide/ratchet below - or just play a note on a connected Keyboard to set the selected step\'s pitch instantly.',()=>{
-        track.editMode=!track.editMode;
-        if(track.editMode&&track.recording){ track.recording=false; recBtn.classList.remove('active'); saveTracks(); }
-        editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight();
-      });
-      head.append(instBtn,muteBtn,soloBtn,recBtn,editBtn);
-      const stepsRow=document.createElement('div'); stepsRow.className='seqStepsRow';
-      const stepRefreshers=[];
-      track._stepRefreshers=stepRefreshers;
-      track.steps.forEach((s,si)=>{
-        const {el:stepEl,refresh}=makeStepButton(track,si);
-        stepsRow.appendChild(stepEl);
-        stepRefreshers.push(refresh);
-        curHighlighters.push(refresh);
-      });
-      attachStepsInteraction(stepsRow,{
-        isEditMode:()=>track.editMode,
-        onSelect:(i)=>{ track.editIndex=i; renderTrackDetail(track); updateCurHighlight(); },
-        onToggle:(i)=>{ const s=track.steps[i]; s.on=!s.on; if(!s.on) s.accent=false; saveTracks(); stepRefreshers[i](); },
-        onAccent:(i)=>{ const s=track.steps[i]; if(s.on){ s.accent=!s.accent; saveTracks(); stepRefreshers[i](); } },
-        onDrawTie:(a,b)=>{ drawTieRun(track.steps,a,b); saveTracks(); stepRefreshers.forEach(r=>r()); },
-      });
-      const detail=document.createElement('div'); detail.className='seqStepDetail'; detail.style.display='none';
-      track._detailEl=detail;
-      trackEl.append(head,stepsRow,detail);
-      wrap.appendChild(trackEl);
-      renderTrackDetail(track);
-    });
-  }
-  function updateCurHighlight(){ curHighlighters.forEach(r=>r()); }
-
-  // Keyboard recording (adr/0024) - see the Sequencer's identical comment
-  // for the full rationale. Tracks a connected Keyboard's currently held
-  // note; a track in edit mode (not recording) gets it written straight
-  // to the selected step, and a recording track captures it into
-  // whichever step is currently playing, tying consecutive steps
-  // together for as long as the same note stays held.
-  let liveNote=null, liveNoteFreshOnset=false;
-  room.onMessage(msg=>{
-    if(msg.t!=='note') return;
-    if(msg.on){
-      liveNote=msg.note; liveNoteFreshOnset=true;
-      tracks.forEach(track=>{
-        if(track.editMode&&!track.recording){
-          const s=track.steps[track.editIndex];
-          s.on=true; s.note=msg.note; saveTracks(); renderTrackDetail(track);
-          if(track._stepRefreshers) track._stepRefreshers[track.editIndex]();
-        }
-      });
-    } else if(liveNote===msg.note){ liveNote=null; }
-  });
-
-  function tick(){
-    updateCurHighlight();
-    const anySolo=tracks.some(t=>t.solo);
-    tracks.forEach(track=>{
-      const audible=anySolo?track.solo:!track.muted;
-      const s=track.steps[stepIndex];
-      if(audible&&s&&s.on&&!s.tie) fireTrackStep(track,s,stepIndex,baseIntervalMs(),room);
-    });
-    // Capture AFTER this pass's firing - see the Sequencer's identical
-    // comment for why.
-    tracks.forEach(track=>{
-      if(track.recording&&liveNote!=null){
-        const s=track.steps[stepIndex];
-        s.on=true; s.note=liveNote; s.tie=!liveNoteFreshOnset; s.accent=false; s.ratchet=1; s.slide=false;
-        liveNoteFreshOnset=false;
-        if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
-      }
-    });
-    if(stepIndex>=trackLen-1){ stop(); return; } // non-repeating: stop at the end instead of looping
-    const delay=delayAfterStep(stepIndex);
-    stepIndex++;
-    if(playing) timer=setTimeout(tick,delay);
-  }
-  function start(){
-    if(playing) return;
-    playing=true; stepIndex=0; q('.trkPlay').textContent='⏸ Stop';
-    tick();
-  }
-  function stop(){
-    playing=false; clearTimeout(timer); timer=null; stepIndex=0;
-    q('.trkPlay').textContent='▶️ Play';
-    updateCurHighlight();
-  }
-  attachTooltip(q('.trkPlay'),'Plays through the whole arrangement once from the start, then stops - this tool never loops.',()=>{ playing?stop():start(); });
-
-  // Export/Import: Tracks holds exactly one arrangement at a time
-  // (adr/0019), auto-saved to this phone only - there's no in-app
-  // named-pattern library like the Sequencer's. A downloadable/
-  // uploadable file is how you keep more than one version, or move an
-  // arrangement to another phone/browser, since localStorage never
-  // syncs on its own (adr/0007). See adr/0022.
+  // Export/Import: a downloadable/uploadable file, for keeping more than
+  // one version or moving a pattern to another phone/browser, since
+  // localStorage never syncs on its own (adr/0007). Predates this merge
+  // (adr/0022, Track Writer-only); now available here too, carrying the
+  // Loop flag and Chance/Condition so a looping pattern round-trips in
+  // full. A file exported before this merge has no `loop` field - it
+  // came from the old, always-non-looping Track Writer, so it imports
+  // with Loop off.
   function exportArrangement(){
-    const data={appId:'fm1-tracks',schema:1,len:trackLen,bpm,swing,
+    const data={appId:'fm1-tracks',schema:1,len:patternLen,bpm,swing,loop,
       tracks:tracks.map(t=>({instrumentKey:t.instrumentKey,muted:t.muted,solo:t.solo,
-        steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,note:s.note,tie:s.tie,slide:s.slide}))}))};
+        steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,chance:s.chance,condition:s.condition,
+          note:s.note,tie:s.tie,slide:s.slide}))}))};
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a'); a.href=url;
@@ -1327,56 +1107,48 @@ function createTracksPanel(el,room){
     if(!data||data.appId!=='fm1-tracks'||!Array.isArray(data.tracks)||data.tracks.length!==4){
       alert('That file doesn\'t look like a Tracks export.'); return;
     }
-    trackLen=Math.max(1,+data.len||32); lsSet('trkLen',trackLen);
-    bpm=Math.max(60,Math.min(200,+data.bpm||120)); lsSet('trkBpm',bpm);
-    swing=Math.max(50,Math.min(75,+data.swing||50)); lsSet('trkSwing',swing);
+    patternLen=Math.max(1,+data.len||32); lsSet('seqLen',patternLen);
+    bpm=Math.max(60,Math.min(200,+data.bpm||120)); lsSet('seqBpm',bpm);
+    swing=Math.max(50,Math.min(75,+data.swing||50)); lsSet('seqSwing',swing);
+    loop=data.loop!=null?!!data.loop:false; lsSet('loop',loop);
     tracks=data.tracks.map((t,idx)=>({
       instrumentKey:t.instrumentKey||TRACK_DEFAULT_KEYS[idx],
       muted:!!t.muted, solo:!!t.solo, editMode:false, editIndex:0, recording:false,
       steps:resizeSteps((Array.isArray(t.steps)?t.steps:[]).map(s=>({
-        on:!!s.on, accent:!!s.accent, ratchet:s.ratchet!=null?s.ratchet:1, chance:100, condition:'all',
+        on:!!s.on, accent:!!s.accent, ratchet:s.ratchet!=null?s.ratchet:1,
+        chance:s.chance!=null?s.chance:100, condition:s.condition||'all',
         note:s.note!=null?s.note:DEFAULT_NOTE, tie:!!s.tie, slide:!!s.slide,
-      })),trackLen),
+      })),patternLen),
     }));
     saveTracks();
     q('.sBpm').value=bpm; q('.vBpm').textContent=bpm+' BPM';
     q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
-    el.querySelectorAll('.lenChoices .choice').forEach(x=>x.classList.toggle('sel',+x.dataset.len===trackLen));
+    el.querySelectorAll('.lenChoices .choice').forEach(x=>x.classList.toggle('sel',+x.dataset.len===patternLen));
+    updateLoopUI();
+    stepIndex=stepIndex%patternLen;
     renderTracks();
   }
   function importArrangementFromFile(file){
     const reader=new FileReader();
     reader.onload=()=>{
       let data; try{ data=JSON.parse(reader.result); }catch(e){ alert('That file isn\'t valid JSON.'); return; }
-      if(!confirm('Replace the current arrangement with this file? This can\'t be undone.')) return;
+      if(!confirm('Replace the current tracks with this file? This can\'t be undone.')) return;
       applyImportedData(data);
     };
     reader.onerror=()=>alert('Could not read that file.');
     reader.readAsText(file);
   }
-  attachTooltip(q('.exportBtn'),'Download the current arrangement as a file - keep it as a backup, or load it on another phone/browser.',exportArrangement);
-  attachTooltip(q('.importBtn'),'Load an arrangement from a file exported here. Replaces what\'s currently loaded.',()=>q('.importFile').click());
+  attachTooltip(q('.exportBtn'),'Download the current tracks as a file - keep it as a backup, or load it on another phone/browser.',exportArrangement);
+  attachTooltip(q('.importBtn'),'Load tracks from a file exported here. Replaces what\'s currently loaded.',()=>q('.importFile').click());
   q('.importFile').addEventListener('change',()=>{
     const file=q('.importFile').files[0];
     if(file) importArrangementFromFile(file);
     q('.importFile').value='';
   });
 
-  q('.sBpm').value=bpm; q('.vBpm').textContent=bpm+' BPM';
-  q('.sBpm').addEventListener('input',()=>{ bpm=+q('.sBpm').value; q('.vBpm').textContent=bpm+' BPM'; lsSet('trkBpm',bpm); });
-  q('.sSwing').value=swing; q('.vSwing').textContent=swing+'%';
-  q('.sSwing').addEventListener('input',()=>{ swing=+q('.sSwing').value; q('.vSwing').textContent=swing+'%'; lsSet('trkSwing',swing); });
-  el.querySelectorAll('.lenChoices .choice').forEach(b=>{
-    b.classList.toggle('sel',+b.dataset.len===trackLen);
-    b.onclick=()=>{
-      trackLen=+b.dataset.len; lsSet('trkLen',trackLen);
-      tracks.forEach(t=>{ t.steps=resizeSteps(t.steps,trackLen); t.editIndex=Math.min(t.editIndex,trackLen-1); });
-      saveTracks();
-      if(stepIndex>=trackLen) stepIndex=0;
-      el.querySelectorAll('.lenChoices .choice').forEach(x=>x.classList.toggle('sel',x===b));
-      renderTracks();
-    };
-  });
+  updateLoopUI();
+  renderPatterns();
+  renderSong();
   renderTracks();
 }
 
@@ -1463,7 +1235,6 @@ function updateStageStatus(){
 const ROLE_PANELS={
   keyboard: {id:'keyboard', label:'🎹 Keyboard', mount:createKeyboardPanel},
   controls: {id:'controls', label:'🎛️ Controls', mount:createControlsPanel},
-  sequencer:{id:'sequencer',label:'🥁 Sequencer', mount:createSequencerPanel},
   tracks:   {id:'tracks',   label:'✍️ Tracks',   mount:createTracksPanel},
 };
 function enterStage(){

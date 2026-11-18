@@ -1,7 +1,11 @@
 # 19. Track Writer: a 4th role for full, non-repeating arrangements; shared drag-to-tie gesture
 
 ## Status
-Accepted
+Partially superseded by `adr/0025` - the Track Writer role was merged
+into the Sequencer as one "Tracks" tool with a Loop toggle, so it's no
+longer a separate 4th role and does get a saved-pattern library (the
+Sequencer's) after all. The drag-to-tie gesture itself, and everything
+below about why/how it works, is unchanged.
 
 ## Context
 Every role so far is loop-based: the Sequencer always repeats its pattern
