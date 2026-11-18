@@ -82,7 +82,7 @@
   <div class="topbar"><a href="../../">◀ Home</a></div>
   <div class="body">
     <h1>FM-1 Clone</h1>
-    <p class="hint">One tiny FM synth, played across your phones: a Keyboard, a Controls, and Tracks (a step editor that can loop or play once). One phone hosts, the rest join with a room code.</p>
+    <p class="hint">One tiny FM synth, played across your phones: a Keyboard, a Controls, a Drum Pad, and Tracks (a step editor that can loop or play once). One phone hosts, the rest join with a room code.</p>
     <div class="grid">
       <button class="choice" id="btnHost">HOST</button>
       <button class="choice" id="btnJoin">JOIN</button>
@@ -107,10 +107,11 @@
   <div class="topbar"><button id="instrBack">◀ Back</button></div>
   <div class="body">
     <h1>This Phone Is</h1>
-    <p class="hint">Pick what this phone does - tap as many as you want (e.g. Keyboard + Controls on one phone, Tracks on another).</p>
-    <div class="grid" id="instrChoices" style="grid-template-columns:repeat(3,1fr)">
+    <p class="hint">Pick what this phone does - tap as many as you want (e.g. Keyboard + Controls on one phone, Drum Pad + Tracks on another).</p>
+    <div class="grid" id="instrChoices" style="grid-template-columns:repeat(2,1fr)">
       <button class="choice" data-r="keyboard">🎹<br>Keyboard</button>
       <button class="choice" data-r="controls">🎛️<br>Controls</button>
+      <button class="choice" data-r="drumpad">🥁<br>Drum Pad</button>
       <button class="choice" data-r="tracks">✍️<br>Tracks</button>
     </div>
     <button class="big" id="instrGo" disabled>Continue</button>
@@ -192,6 +193,70 @@ function slideVoiceToFreq(v,patch,newFreq,durationMs){
   v.mod.frequency.setValueAtTime(v.mod.frequency.value,now);
   v.mod.frequency.linearRampToValueAtTime(newFreq*patch.ratio,t);
 }
+// Drum kit: a second, percussion-only synthesis engine alongside the FM
+// voice above, ported from Phone Band's instruments (apps/band) - same
+// noise-burst/pitched-envelope approach, just wired into FM-1's own
+// ctx/master instead of duplicating a separate audio graph. Used by the
+// Drum Pad role (adr/0027) and by any Tracks track whose instrument is
+// set to Drum Kit, so a step's `note` is a drum id rather than a MIDI
+// pitch for those tracks specifically (adr/0027).
+let drumNoiseBuf=null;
+function drumEnv(g,t,peak,attack,decay){
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0001,peak),t+attack);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+attack+decay);
+}
+function drumTone(type,freq,t,dur,peak,endFreq){
+  audio();
+  const o=ctx.createOscillator(), g=ctx.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  if(endFreq) o.frequency.exponentialRampToValueAtTime(endFreq,t+dur);
+  drumEnv(g,t,peak,0.003,dur); o.connect(g); g.connect(master);
+  o.start(t); o.stop(t+dur+0.05);
+}
+function drumNoiseHit(t,dur,peak,ftype,ffreq,q){
+  audio();
+  if(!drumNoiseBuf){
+    drumNoiseBuf=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);
+    const d=drumNoiseBuf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  }
+  const s=ctx.createBufferSource(), f=ctx.createBiquadFilter(), g=ctx.createGain();
+  s.buffer=drumNoiseBuf; f.type=ftype; f.frequency.value=ffreq; f.Q.value=q||1;
+  drumEnv(g,t,peak,0.002,dur); s.connect(f); f.connect(g); g.connect(master);
+  s.start(t); s.stop(t+dur+0.05);
+}
+const DRUM_SYNTH={
+  kick:   (t,v)=>drumTone('sine',160,t,0.45,1*v,40),
+  snare:  (t,v)=>{ drumNoiseHit(t,0.2,0.8*v,'highpass',1500); drumTone('triangle',220,t,0.1,0.4*v,160); },
+  hat:    (t,v)=>drumNoiseHit(t,0.05,0.5*v,'highpass',8000),
+  openhat:(t,v)=>drumNoiseHit(t,0.35,0.45*v,'highpass',7000),
+  clap:   (t,v)=>[0,0.012,0.024].forEach(d=>drumNoiseHit(t+d,0.12,0.6*v,'bandpass',1200,1.5)),
+  crash:  (t,v)=>drumNoiseHit(t,1.4,0.5*v,'highpass',5000),
+  tomHi:  (t,v)=>drumTone('sine',260,t,0.3,0.9*v,160),
+  tomLo:  (t,v)=>drumTone('sine',140,t,0.4,0.9*v,80),
+  cowbell:(t,v)=>{ drumTone('square',540,t,0.25,0.25*v); drumTone('square',800,t,0.25,0.2*v); },
+  shaker: (t,v)=>drumNoiseHit(t,0.09,0.4*v,'bandpass',6000,2),
+};
+// Fixed note numbers (loosely General-MIDI-ish, not exact) identify each
+// drum within a step's `note` field, same way a MIDI pitch identifies a
+// Keyboard note - so the existing per-step data shape, drag-to-tie, and
+// Keyboard-recording machinery all work for a drum kit track unchanged.
+const DRUM_KIT=[
+  {note:36,name:'Kick',   label:'KICK',   fn:'kick'},
+  {note:38,name:'Snare',  label:'SNARE',  fn:'snare'},
+  {note:42,name:'Hat',    label:'HAT',    fn:'hat'},
+  {note:46,name:'OpenHat',label:'OPEN HAT',fn:'openhat'},
+  {note:41,name:'TomLo',  label:'LO TOM', fn:'tomLo'},
+  {note:48,name:'TomHi',  label:'HI TOM', fn:'tomHi'},
+  {note:39,name:'Clap',   label:'CLAP',   fn:'clap'},
+  {note:49,name:'Crash',  label:'CRASH',  fn:'crash'},
+  {note:56,name:'Cowbell',label:'COWBELL',fn:'cowbell'},
+  {note:70,name:'Shaker', label:'SHAKER', fn:'shaker'},
+];
+const DRUM_BY_NOTE={}; DRUM_KIT.forEach(d=>{ DRUM_BY_NOTE[d.note]=d; });
+const DRUM_KIT_INSTRUMENT={key:'drumkit',label:'🥁 Drum Kit',patch:null};
+
 const DEFAULT_PATCH={wave:'sine',ratio:1,fm:2,a:0.01,d:0.5,s:0.4,r:0.4,vol:0.8};
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const PRESETS={
@@ -217,7 +282,7 @@ function saveCustomInstruments(list){ lsSet('instruments',list); }
 function allInstruments(){
   const builtins=PRESET_ORDER.map(key=>({key:'preset:'+key,label:PRESET_LABELS[key],patch:PRESETS[key]}));
   const custom=loadCustomInstruments().map(inst=>({key:'custom:'+inst.id,label:inst.name,patch:inst.patch}));
-  return builtins.concat(custom);
+  return [DRUM_KIT_INSTRUMENT].concat(builtins,custom);
 }
 function resolveInstrument(key){
   return allInstruments().find(i=>i.key===key) || {key:'preset:epiano',label:PRESET_LABELS.epiano,patch:PRESETS.epiano};
@@ -251,6 +316,25 @@ function legatoExtensionSteps(steps,si){
   return n;
 }
 function fireTrackStep(track,s,si,intervalMs,room){
+  // Drum Kit tracks use the percussion engine instead of the FM voice -
+  // no slide (drums don't pitch-glide) and no sustained voice to release,
+  // just a one-shot hit per (possibly ratcheted) trigger. `synth:true`
+  // here means the same thing it does below: a playback echo, not real
+  // pad input, so a recording track doesn't re-record its own hits.
+  if(track.instrumentKey==='drumkit'){
+    const velocity=s.accent?1.0:0.72;
+    const drum=DRUM_BY_NOTE[s.note]||DRUM_KIT[0];
+    const n=s.ratchet||1, slice=intervalMs/n;
+    for(let r=0;r<n;r++){
+      setTimeout(()=>{
+        audio();
+        DRUM_SYNTH[drum.fn](ctx.currentTime+0.001,velocity);
+        room.send({t:'note',note:s.note,on:true,drum:drum.name,synth:true});
+        setTimeout(()=>room.send({t:'note',note:s.note,on:false,drum:drum.name,synth:true}),60);
+      },r*slice);
+    }
+    return;
+  }
   const inst=resolveInstrument(track.instrumentKey);
   const basePatch=Object.assign({},inst.patch,{vol:inst.patch.vol*(s.accent?1.0:0.72)});
   const freq=noteToFreq(s.note);
@@ -604,12 +688,45 @@ function createControlsPanel(el,room){
   room.onMessage(msg=>{
     if(msg.t==='patch'){ patch=msg.patch; lsSet('patch',patch); setSliders(patch); }
     else if(msg.t==='note'){
-      q('.nowPlaying').textContent = msg.on ? (NOTE_NAMES[msg.note%12]+Math.floor(msg.note/12-1)) : '—';
+      q('.nowPlaying').textContent = msg.on ? (msg.drum || (NOTE_NAMES[msg.note%12]+Math.floor(msg.note/12-1))) : '—';
       if(msg.on) lastNote=msg.note; // the preview adopts whatever was last actually played on a Keyboard
     }
   });
   setSliders(patch);
   renderInstruments();
+}
+// Drum Pad: a role for playing percussion live - tap a pad, hear a drum,
+// same local-always-plays philosophy as the Keyboard (adr/0004). Sends
+// the same {t:'note',note,on} shape a Keyboard does (plus a `drum` label
+// for display), so it needs no special plumbing to work with Tracks'
+// existing Keyboard-recording machinery (adr/0024/0026): arm a track's
+// ⏺ Record and play along, or select a step in ✏️ edit mode and tap a
+// pad to set that step's drum instantly - inspired by Phone Band
+// (apps/band), whose percussion synthesis this reuses almost verbatim
+// (adr/0027).
+function createDrumPadPanel(el,room){
+  el.innerHTML=`
+    <div class="body">
+      <p class="hint" style="padding:0 0 4px">Tap a pad to play. Arm a Tracks track's ⏺ Record and hit Play to record live, on time with the loop - or put a track in ✏️ edit mode and tap a pad to set the selected step's drum instantly.</p>
+      <div class="grid drumPads" style="grid-template-columns:repeat(2,1fr)"></div>
+    </div>`;
+  const wrap=el.querySelector('.drumPads');
+  DRUM_KIT.forEach(d=>{
+    const b=document.createElement('button'); b.type='button'; b.className='choice';
+    b.textContent=d.label;
+    b.addEventListener('pointerdown',e=>{
+      e.preventDefault();
+      audio();
+      DRUM_SYNTH[d.fn](ctx.currentTime+0.001,1.0);
+      navigator.vibrate?.(12);
+      room.send({t:'note',note:d.note,on:true,drum:d.name});
+    });
+    const off=()=>room.send({t:'note',note:d.note,on:false,drum:d.name});
+    b.addEventListener('pointerup',off);
+    b.addEventListener('pointerleave',off);
+    b.addEventListener('pointercancel',off);
+    wrap.appendChild(b);
+  });
 }
 // Step sequencer. Phase 1: one track, on/off only. Phase 2: 4 tracks
 // (toward Felucca's 4), each with its own instrument, a shared pattern
@@ -826,19 +943,34 @@ function createTracksPanel(el,room){
   }
   function noteRow(track,s){
     const row=document.createElement('div'); row.className='octRow';
+    const isDrum=track.instrumentKey==='drumkit';
     const octDec=document.createElement('button'); octDec.type='button'; octDec.className='octBtn'; octDec.textContent='◀◀';
     const dec=document.createElement('button'); dec.type='button'; dec.className='octBtn'; dec.textContent='◀';
     const label=document.createElement('div'); label.className='octLabel';
-    label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1);
+    // A Drum Kit track's "pitch" is which drum plays - ◀▶ cycles through
+    // DRUM_KIT one at a time instead of by semitone, and shows its name
+    // instead of a meaningless note name. Mirrors how a connected Drum
+    // Pad's own taps set this same field (adr/0027).
+    function labelText(){ return isDrum ? (DRUM_BY_NOTE[s.note]||DRUM_KIT[0]).label : NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1); }
+    label.textContent=labelText();
     const inc=document.createElement('button'); inc.type='button'; inc.className='octBtn'; inc.textContent='▶';
     const octInc=document.createElement('button'); octInc.type='button'; octInc.className='octBtn'; octInc.textContent='▶▶';
-    function updateLabel(){ label.textContent=NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1); }
-    function step(delta){ s.note=Math.max(24,Math.min(108,s.note+delta)); updateLabel(); }
+    function updateLabel(){ label.textContent=labelText(); }
+    function step(delta){
+      if(isDrum){
+        let idx=DRUM_KIT.findIndex(d=>d.note===s.note); if(idx<0) idx=0;
+        idx=Math.max(0,Math.min(DRUM_KIT.length-1,idx+delta));
+        s.note=DRUM_KIT[idx].note;
+      } else {
+        s.note=Math.max(24,Math.min(108,s.note+delta));
+      }
+      updateLabel();
+    }
     function commit(){ saveTracks(); }
     attachRepeatableTap(dec,()=>step(-1),commit);
     attachRepeatableTap(inc,()=>step(1),commit);
-    attachRepeatableTap(octDec,()=>step(-12),commit);
-    attachRepeatableTap(octInc,()=>step(12),commit);
+    attachRepeatableTap(octDec,()=>step(isDrum?-3:-12),commit);
+    attachRepeatableTap(octInc,()=>step(isDrum?3:12),commit);
     row.append(octDec,dec,label,inc,octInc);
     return row;
   }
@@ -848,27 +980,33 @@ function createTracksPanel(el,room){
     if(!track.editMode){ panel.style.display='none'; return; }
     panel.style.display='block';
     const s=track.steps[track.editIndex];
+    const isDrum=track.instrumentKey==='drumkit';
     const title=document.createElement('div'); title.className='ctlLabel'; title.textContent='Step '+(track.editIndex+1);
     panel.appendChild(title);
-    const pLabel=document.createElement('div'); pLabel.className='ctlLabel'; pLabel.textContent='Pitch ⓘ';
-    attachTooltip(pLabel,'This step\'s note. ◀▶ moves a semitone, ◀◀▶▶ jumps an octave - hold either to repeat. Tie and slide only make sense relative to the step before them.');
+    const pLabel=document.createElement('div'); pLabel.className='ctlLabel'; pLabel.textContent=isDrum?'Drum ⓘ':'Pitch ⓘ';
+    attachTooltip(pLabel,isDrum?'Which drum this step plays. ◀▶ cycles one drum at a time, ◀◀▶▶ jumps 3 - hold either to repeat, or just tap a connected Drum Pad while this step is selected.'
+      :'This step\'s note. ◀▶ moves a semitone, ◀◀▶▶ jumps an octave - hold either to repeat. Tie and slide only make sense relative to the step before them.');
     panel.appendChild(pLabel);
     panel.appendChild(noteRow(track,s));
     if(s.tie){
       const tieHint=document.createElement('p'); tieHint.className='hint'; tieHint.style.padding='2px 0';
-      tieHint.textContent='This step is tied, so it never retriggers - its own pitch above has no audible effect. The sound comes from whichever earlier step started this tied run.';
+      tieHint.textContent='This step is tied, so it never retriggers - its own '+(isDrum?'drum':'pitch')+' above has no audible effect. The sound comes from whichever earlier step started this tied run.';
       panel.appendChild(tieHint);
     }
-    const tsRow=document.createElement('div'); tsRow.className='grid'; tsRow.style.gridTemplateColumns='repeat(2,1fr)'; tsRow.style.paddingTop='4px';
+    const tsRow=document.createElement('div'); tsRow.className='grid'; tsRow.style.gridTemplateColumns=isDrum?'1fr':'repeat(2,1fr)'; tsRow.style.paddingTop='4px';
     const tieBtn=document.createElement('button'); tieBtn.type='button'; tieBtn.className='choice small'+(s.tie?' sel':'');
     tieBtn.textContent='Tie: '+(s.tie?'On':'Off');
     attachTooltip(tieBtn,'Tie: don\'t retrigger here - let the previous note keep ringing through this step instead.',
       ()=>{ s.tie=!s.tie; saveTracks(); renderTrackDetail(track); });
-    const slideBtn=document.createElement('button'); slideBtn.type='button'; slideBtn.className='choice small'+(s.slide?' sel':'');
-    slideBtn.textContent='Slide: '+(s.slide?'On':'Off');
-    attachTooltip(slideBtn,'Slide: glide from the previous note\'s pitch into this one instead of a hard retrigger.',
-      ()=>{ s.slide=!s.slide; saveTracks(); renderTrackDetail(track); });
-    tsRow.append(tieBtn,slideBtn);
+    tsRow.append(tieBtn);
+    if(!isDrum){
+      // Slide (pitch glide) has nothing to attach to on a drum hit.
+      const slideBtn=document.createElement('button'); slideBtn.type='button'; slideBtn.className='choice small'+(s.slide?' sel':'');
+      slideBtn.textContent='Slide: '+(s.slide?'On':'Off');
+      attachTooltip(slideBtn,'Slide: glide from the previous note\'s pitch into this one instead of a hard retrigger.',
+        ()=>{ s.slide=!s.slide; saveTracks(); renderTrackDetail(track); });
+      tsRow.append(slideBtn);
+    }
     panel.appendChild(tsRow);
     const rLabel=document.createElement('div'); rLabel.className='ctlLabel'; rLabel.textContent='Ratchet ⓘ';
     attachTooltip(rLabel,'How many times this step re-triggers, evenly spaced within it.');
@@ -1255,9 +1393,10 @@ function updateStageStatus(){
 // enterSinglePhoneMode() below (local room) so both build their panel
 // list the same way.
 const ROLE_PANELS={
-  keyboard: {id:'keyboard', label:'🎹 Keyboard', mount:createKeyboardPanel},
-  controls: {id:'controls', label:'🎛️ Controls', mount:createControlsPanel},
-  tracks:   {id:'tracks',   label:'✍️ Tracks',   mount:createTracksPanel},
+  keyboard: {id:'keyboard', label:'🎹 Keyboard',  mount:createKeyboardPanel},
+  controls: {id:'controls', label:'🎛️ Controls',  mount:createControlsPanel},
+  drumpad:  {id:'drumpad',  label:'🥁 Drum Pad',  mount:createDrumPadPanel},
+  tracks:   {id:'tracks',   label:'✍️ Tracks',    mount:createTracksPanel},
 };
 function enterStage(){
   const code=roomCode||hostCode;
