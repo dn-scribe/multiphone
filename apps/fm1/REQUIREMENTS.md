@@ -200,6 +200,15 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   percussion sounds instead of the FM voice; the step detail panel
   adapts (drum name instead of note name, no Slide toggle, since slide
   has nothing to glide on a drum hit) (`adr/0027`).
+- [x] **Chord tool**: a 🎵 Chords mode inside Drum Pad (toggle next to
+  🥁 Drums) — 7 pads, the diatonic triads of C major, with their own
+  octave ◀/▶. Plays the full chord live through whatever patch
+  Keyboard/Controls currently have set; recording/edit-mode entry
+  captures the chord's root note, same as any other note (no true
+  per-step chords — see open questions). New **⌨️ Keyboard Sound**
+  instrument option: a track set to it always plays back using
+  Keyboard's *current* patch, resolved fresh every time, not a frozen
+  copy — picked manually, never automatic (`adr/0028`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
@@ -226,10 +235,13 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   list.
 - [ ] Sequencer: true continuous per-step velocity, not just the
   binary accent built in Phase 2.
-- [ ] Sequencer: chords (a step playing more than one note at once);
-  parameter locks (`adr/0016`). Live recording itself is now built
-  (`adr/0024`), but with no separate, adjustable quantize amount - a
-  note always lands on whichever step is current at that tick.
+- [ ] Tracks: true per-step chords (a step playing more than one note at
+  once) are still not built, even with a Chord tool now live on Drum
+  Pad (`adr/0028`) — only a chord's root note gets recorded, since the
+  step model stays one-note-per-step. Parameter locks also still open
+  (`adr/0016`). Live recording itself is now built (`adr/0024`), but
+  with no separate, adjustable quantize amount - a note always lands on
+  whichever step is current at that tick.
 - [ ] Sequencer: a scale-locked pitch picker (e.g. "stay in C major")
   instead of raw semitone-by-semitone stepping.
 - [ ] Song: no reordering UI (remove + re-add via ➕ is the current
