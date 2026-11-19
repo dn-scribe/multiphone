@@ -309,6 +309,12 @@ function allInstruments(){
 }
 function resolveInstrument(key){
   if(key==='keyboardsound') return {key,label:KEYBOARD_SOUND_INSTRUMENT.label,patch:lsGet('patch',null)||DEFAULT_PATCH};
+  // 'recorded' is a per-track frozen snapshot (track.recordedPatch), not a
+  // globally-pickable instrument - it never appears in allInstruments(),
+  // only ever gets set BY recording itself (adr/0029). The label-only
+  // fallback here covers display; fireTrackStep reads track.recordedPatch
+  // directly since the real patch is track-specific, not global.
+  if(key==='recorded') return {key,label:'🎙️ Recorded',patch:null};
   return allInstruments().find(i=>i.key===key) || {key:'preset:epiano',label:PRESET_LABELS.epiano,patch:PRESETS.epiano};
 }
 
@@ -359,7 +365,12 @@ function fireTrackStep(track,s,si,intervalMs,room){
     }
     return;
   }
-  const inst=resolveInstrument(track.instrumentKey);
+  // 'recorded' is a per-track frozen patch snapshot (adr/0029), not a
+  // globally-resolvable instrument, so it's read directly off the track
+  // here instead of through resolveInstrument().
+  const inst=track.instrumentKey==='recorded'
+    ? {patch:track.recordedPatch||DEFAULT_PATCH}
+    : resolveInstrument(track.instrumentKey);
   const basePatch=Object.assign({},inst.patch,{vol:inst.patch.vol*(s.accent?1.0:0.72)});
   const freq=noteToFreq(s.note);
   const tieExtra=legatoExtensionSteps(track.steps,si)*intervalMs;
@@ -904,7 +915,7 @@ function createTracksPanel(el,room){
   function loadSongList(){ return lsGet('song',[]); }
   function saveSongList(list){ lsSet('song',list); }
   function cloneTrackForSave(t){
-    return {instrumentKey:t.instrumentKey,muted:t.muted,solo:t.solo,
+    return {instrumentKey:t.instrumentKey,recordedPatch:t.recordedPatch||null,muted:t.muted,solo:t.solo,
       steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,chance:s.chance,condition:s.condition,
         note:s.note,tie:s.tie,slide:s.slide}))};
   }
@@ -916,7 +927,7 @@ function createTracksPanel(el,room){
     loop=p.loop!=null?!!p.loop:true; // patterns saved before adr/0025 had no loop flag - they were always-looping Sequencer patterns
     lsSet('seqLen',patternLen); lsSet('seqSwing',swing); lsSet('loop',loop);
     tracks=p.tracks.map(t=>({
-      instrumentKey:t.instrumentKey, muted:t.muted, solo:t.solo,
+      instrumentKey:t.instrumentKey, recordedPatch:t.recordedPatch||null, muted:t.muted, solo:t.solo,
       steps:resizeSteps(t.steps.map(s=>({on:s.on,accent:s.accent,
         ratchet:s.ratchet!=null?s.ratchet:1, chance:s.chance!=null?s.chance:100, condition:s.condition||'all',
         note:s.note!=null?s.note:DEFAULT_NOTE, tie:!!s.tie, slide:!!s.slide})),patternLen),
@@ -1120,6 +1131,7 @@ function createTracksPanel(el,room){
       const head=document.createElement('div'); head.className='seqTrackHead';
       const instBtn=document.createElement('button'); instBtn.type='button'; instBtn.className='trackBtn presetBtn';
       instBtn.textContent=resolveInstrument(track.instrumentKey).label;
+      track._instBtn=instBtn; // so recording (outside this closure) can refresh the label when it auto-assigns an instrument
       attachTooltip(instBtn,'Tap to cycle this track\'s instrument.',()=>{
         const list=allInstruments(); const idx=list.findIndex(i=>i.key===track.instrumentKey);
         track.instrumentKey=list[(idx+1)%list.length].key;
@@ -1194,6 +1206,23 @@ function createTracksPanel(el,room){
   // note-on happens to land on a step tick() hasn't reached yet -
   // without it, that step's own fresh-onset write gets overwritten with
   // tie:true by the sustain-check right after.
+  // A track adopts whatever instrument actually made the sound the moment
+  // it captures a note from Drum Pad/Chords/Keyboard - a drum hit sets it
+  // to Drum Kit, anything else freezes a snapshot of Keyboard/Controls'
+  // *current* patch onto the track itself (track.recordedPatch), not a
+  // live link like ⌨️ Keyboard Sound - so the track keeps sounding the way
+  // it did when recorded even if that patch changes later. Only changes
+  // the instrument when it doesn't already match, so replacing it by hand
+  // afterward (the instrument-cycle button) sticks instead of being
+  // overwritten by the next captured note (adr/0029).
+  function adoptSourceInstrument(track,msg){
+    if(msg.drum){
+      if(track.instrumentKey!=='drumkit'){ track.instrumentKey='drumkit'; if(track._instBtn) track._instBtn.textContent=resolveInstrument(track.instrumentKey).label; }
+    } else if(track.instrumentKey!=='recorded'){
+      track.instrumentKey='recorded'; track.recordedPatch=lsGet('patch',null)||DEFAULT_PATCH;
+      if(track._instBtn) track._instBtn.textContent=resolveInstrument(track.instrumentKey).label;
+    }
+  }
   let liveNote=null, liveNoteLastStep=-1;
   room.onMessage(msg=>{
     if(msg.t!=='note'||msg.synth) return; // ignore our own playback echoes - see fireTrackStep
@@ -1202,11 +1231,12 @@ function createTracksPanel(el,room){
       tracks.forEach(track=>{
         if(track.editMode&&!track.recording){
           const s=track.steps[track.editIndex];
-          s.on=true; s.note=msg.note; saveTracks(); renderTrackDetail(track);
+          s.on=true; s.note=msg.note; adoptSourceInstrument(track,msg); saveTracks(); renderTrackDetail(track);
           if(track._stepRefreshers) track._stepRefreshers[track.editIndex]();
         } else if(track.recording&&playing&&stepIndex!==liveNoteLastStep){
           const s=track.steps[stepIndex];
           s.on=true; s.note=msg.note; s.tie=liveNoteLastStep!==-1; s.accent=false; s.ratchet=1; s.slide=false;
+          adoptSourceInstrument(track,msg);
           if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
         }
       });
@@ -1338,7 +1368,7 @@ function createTracksPanel(el,room){
   // with Loop off.
   function exportArrangement(){
     const data={appId:'fm1-tracks',schema:1,len:patternLen,bpm,swing,loop,
-      tracks:tracks.map(t=>({instrumentKey:t.instrumentKey,muted:t.muted,solo:t.solo,
+      tracks:tracks.map(t=>({instrumentKey:t.instrumentKey,recordedPatch:t.recordedPatch||null,muted:t.muted,solo:t.solo,
         steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,chance:s.chance,condition:s.condition,
           note:s.note,tie:s.tie,slide:s.slide}))}))};
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
@@ -1357,7 +1387,7 @@ function createTracksPanel(el,room){
     swing=Math.max(50,Math.min(75,+data.swing||50)); lsSet('seqSwing',swing);
     loop=data.loop!=null?!!data.loop:false; lsSet('loop',loop);
     tracks=data.tracks.map((t,idx)=>({
-      instrumentKey:t.instrumentKey||TRACK_DEFAULT_KEYS[idx],
+      instrumentKey:t.instrumentKey||TRACK_DEFAULT_KEYS[idx], recordedPatch:t.recordedPatch||null,
       muted:!!t.muted, solo:!!t.solo, editMode:false, editIndex:0, recording:false,
       steps:resizeSteps((Array.isArray(t.steps)?t.steps:[]).map(s=>({
         on:!!s.on, accent:!!s.accent, ratchet:s.ratchet!=null?s.ratchet:1,
