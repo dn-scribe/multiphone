@@ -255,7 +255,30 @@ const DRUM_KIT=[
   {note:70,name:'Shaker', label:'SHAKER', fn:'shaker'},
 ];
 const DRUM_BY_NOTE={}; DRUM_KIT.forEach(d=>{ DRUM_BY_NOTE[d.note]=d; });
+// Chord tool (adr/0028): the diatonic triads of C major, as semitone
+// offsets from a selectable octave's root - so a chord's actual notes
+// are just `(octave+1)*12 + offset`, same MIDI formula the Keyboard
+// panel already uses. Plays the full chord live (polyphonic, using
+// whatever patch Keyboard/Controls currently have set - the same
+// shared `lsGet('patch',...)`), but only the chord's root note is sent
+// as the recordable {t:'note',...} message, since a step still holds
+// one note - same deliberate "no true chords in the step data" scope
+// boundary as every other per-step feature in this app (adr/0013).
+const CHORD_KIT=[
+  {label:'C',  offsets:[0,4,7]},
+  {label:'Dm', offsets:[2,5,9]},
+  {label:'Em', offsets:[4,7,11]},
+  {label:'F',  offsets:[5,9,12]},
+  {label:'G',  offsets:[7,11,14]},
+  {label:'Am', offsets:[9,12,16]},
+  {label:'B°', offsets:[11,14,17]},
+];
 const DRUM_KIT_INSTRUMENT={key:'drumkit',label:'🥁 Drum Kit',patch:null};
+// A track can also be set to "always sound like whatever Keyboard is
+// currently set to," instead of one fixed instrument - resolved fresh
+// every time it plays (adr/0028), not a one-time snapshot, so it tracks
+// Keyboard/Controls' current patch live even if that patch changes later.
+const KEYBOARD_SOUND_INSTRUMENT={key:'keyboardsound',label:'⌨️ Keyboard Sound',patch:null};
 
 const DEFAULT_PATCH={wave:'sine',ratio:1,fm:2,a:0.01,d:0.5,s:0.4,r:0.4,vol:0.8};
 const NOTE_NAMES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -282,9 +305,10 @@ function saveCustomInstruments(list){ lsSet('instruments',list); }
 function allInstruments(){
   const builtins=PRESET_ORDER.map(key=>({key:'preset:'+key,label:PRESET_LABELS[key],patch:PRESETS[key]}));
   const custom=loadCustomInstruments().map(inst=>({key:'custom:'+inst.id,label:inst.name,patch:inst.patch}));
-  return [DRUM_KIT_INSTRUMENT].concat(builtins,custom);
+  return [DRUM_KIT_INSTRUMENT,KEYBOARD_SOUND_INSTRUMENT].concat(builtins,custom);
 }
 function resolveInstrument(key){
+  if(key==='keyboardsound') return {key,label:KEYBOARD_SOUND_INSTRUMENT.label,patch:lsGet('patch',null)||DEFAULT_PATCH};
   return allInstruments().find(i=>i.key===key) || {key:'preset:epiano',label:PRESET_LABELS.epiano,patch:PRESETS.epiano};
 }
 
@@ -641,7 +665,9 @@ function createControlsPanel(el,room){
   }
   function renderInstruments(){
     const wrap=q('.presetChoices'); wrap.innerHTML='';
-    allInstruments().forEach(inst=>{
+    // Drum Kit / Keyboard Sound aren't real editable FM patches (patch:null,
+    // resolved specially elsewhere) - only show actual patches here.
+    allInstruments().filter(inst=>inst.patch).forEach(inst=>{
       const isCustom=inst.key.startsWith('custom:');
       const b=document.createElement('button'); b.type='button'; b.className='choice small';
       b.textContent=inst.label;
@@ -688,7 +714,7 @@ function createControlsPanel(el,room){
   room.onMessage(msg=>{
     if(msg.t==='patch'){ patch=msg.patch; lsSet('patch',patch); setSliders(patch); }
     else if(msg.t==='note'){
-      q('.nowPlaying').textContent = msg.on ? (msg.drum || (NOTE_NAMES[msg.note%12]+Math.floor(msg.note/12-1))) : '—';
+      q('.nowPlaying').textContent = msg.on ? (msg.chord || msg.drum || (NOTE_NAMES[msg.note%12]+Math.floor(msg.note/12-1))) : '—';
       if(msg.on) lastNote=msg.note; // the preview adopts whatever was last actually played on a Keyboard
     }
   });
@@ -703,14 +729,29 @@ function createControlsPanel(el,room){
 // ⏺ Record and play along, or select a step in ✏️ edit mode and tap a
 // pad to set that step's drum instantly - inspired by Phone Band
 // (apps/band), whose percussion synthesis this reuses almost verbatim
-// (adr/0027).
+// (adr/0027). A Chords mode was added alongside it (adr/0028): same
+// pad-grid/recording mechanics, but each pad plays a full chord with
+// whichever patch Keyboard/Controls currently have set, instead of a
+// drum hit.
 function createDrumPadPanel(el,room){
   el.innerHTML=`
     <div class="body">
-      <p class="hint" style="padding:0 0 4px">Tap a pad to play. Arm a Tracks track's ⏺ Record and hit Play to record live, on time with the loop - or put a track in ✏️ edit mode and tap a pad to set the selected step's drum instantly.</p>
+      <div class="grid" style="grid-template-columns:repeat(2,1fr)">
+        <button class="choice small modeBtn modeDrums sel" type="button">🥁 Drums</button>
+        <button class="choice small modeBtn modeChords" type="button">🎵 Chords</button>
+      </div>
+      <div class="octRow chordOctRow" style="display:none">
+        <button class="octBtn" type="button" data-d="-1">◀ Oct</button>
+        <div class="octLabel">Oct 4</div>
+        <button class="octBtn" type="button" data-d="1">Oct ▶</button>
+      </div>
+      <p class="hint drumsHint" style="padding:0 0 4px">Tap a pad to play. Arm a Tracks track's ⏺ Record and hit Play to record live, on time with the loop - or put a track in ✏️ edit mode and tap a pad to set the selected step's drum instantly.</p>
+      <p class="hint chordsHint" style="padding:0 0 4px;display:none">Tap a pad to play the full chord, in whatever sound Keyboard/Controls currently have set. Recording (or edit-mode entry) captures the chord's root note - set a Tracks track's instrument to ⌨️ Keyboard Sound so it plays back in that same sound.</p>
       <div class="grid drumPads" style="grid-template-columns:repeat(2,1fr)"></div>
+      <div class="grid chordPads" style="grid-template-columns:repeat(2,1fr);display:none"></div>
     </div>`;
-  const wrap=el.querySelector('.drumPads');
+  const q=sel=>el.querySelector(sel);
+  const drumWrap=q('.drumPads'), chordWrap=q('.chordPads');
   DRUM_KIT.forEach(d=>{
     const b=document.createElement('button'); b.type='button'; b.className='choice';
     b.textContent=d.label;
@@ -725,7 +766,51 @@ function createDrumPadPanel(el,room){
     b.addEventListener('pointerup',off);
     b.addEventListener('pointerleave',off);
     b.addEventListener('pointercancel',off);
-    wrap.appendChild(b);
+    drumWrap.appendChild(b);
+  });
+  let chordOctave=4;
+  const heldChords={}; // chord label -> array of active voices, for multi-touch
+  CHORD_KIT.forEach(c=>{
+    const b=document.createElement('button'); b.type='button'; b.className='choice';
+    b.textContent=c.label;
+    b.addEventListener('pointerdown',e=>{
+      e.preventDefault();
+      audio();
+      const patch=lsGet('patch',null)||DEFAULT_PATCH;
+      const base=(chordOctave+1)*12;
+      const notes=c.offsets.map(o=>base+o);
+      heldChords[c.label]=notes.map(n=>triggerVoice(patch,noteToFreq(n)));
+      navigator.vibrate?.(12);
+      room.send({t:'note',note:notes[0],on:true,chord:c.label});
+    });
+    const off=()=>{
+      const patch=lsGet('patch',null)||DEFAULT_PATCH;
+      (heldChords[c.label]||[]).forEach(v=>releaseVoice(v,patch));
+      delete heldChords[c.label];
+      const base=(chordOctave+1)*12;
+      room.send({t:'note',note:base+c.offsets[0],on:false,chord:c.label});
+    };
+    b.addEventListener('pointerup',off);
+    b.addEventListener('pointerleave',off);
+    b.addEventListener('pointercancel',off);
+    chordWrap.appendChild(b);
+  });
+  q('.chordOctRow').addEventListener('click',e=>{
+    const d=e.target.dataset.d; if(!d) return;
+    const next=chordOctave+(+d);
+    if(next>=1&&next<=7){ chordOctave=next; q('.chordOctRow .octLabel').textContent='Oct '+chordOctave; }
+  });
+  q('.modeDrums').addEventListener('click',()=>{
+    q('.modeDrums').classList.add('sel'); q('.modeChords').classList.remove('sel');
+    drumWrap.style.display=''; chordWrap.style.display='none';
+    q('.chordOctRow').style.display='none';
+    q('.drumsHint').style.display=''; q('.chordsHint').style.display='none';
+  });
+  q('.modeChords').addEventListener('click',()=>{
+    q('.modeChords').classList.add('sel'); q('.modeDrums').classList.remove('sel');
+    drumWrap.style.display='none'; chordWrap.style.display='';
+    q('.chordOctRow').style.display='';
+    q('.drumsHint').style.display='none'; q('.chordsHint').style.display='';
   });
 }
 // Step sequencer. Phase 1: one track, on/off only. Phase 2: 4 tracks
