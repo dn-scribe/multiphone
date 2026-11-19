@@ -209,6 +209,14 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   instrument option: a track set to it always plays back using
   Keyboard's *current* patch, resolved fresh every time, not a frozen
   copy — picked manually, never automatic (`adr/0028`).
+- [x] **A track adopts the instrument it was recorded with**: capturing
+  a note (live recording or edit-mode instant entry) now auto-sets the
+  track's instrument to match — 🥁 Drum Kit for a drum hit, or a new
+  **🎙️ Recorded** pseudo-instrument that freezes a snapshot of
+  Keyboard/Controls' patch at that moment (unlike ⌨️ Keyboard Sound,
+  this never changes again on its own, even if that patch does later).
+  Replace it anytime with the normal instrument-cycle button
+  (`adr/0029`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
