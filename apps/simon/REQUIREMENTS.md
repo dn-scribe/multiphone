@@ -3,7 +3,8 @@
 ## Done
 - [x] One phone hosts a game; up to 5 phones total can join using a
   4-letter, letters-only room code.
-- [x] Each phone chooses 1-3 buttons for itself before joining/starting.
+- [x] Each phone chooses 1-4 buttons for itself before joining/starting
+  (`adr/0005`).
 - [x] Basic mode: classic Simon, constant playback tempo.
 - [x] Advanced mode: tempo increases round by round, floored so it stays
   playable.
@@ -33,4 +34,4 @@
   stable identity across a reconnect — only the name/emoji you type
   carries over, via `localStorage`, not an actual session.)
 - [ ] Any limit/warning when total buttons across phones gets very large
-  (e.g. 5 phones × 3 buttons = 15)?
+  (e.g. 5 phones × 4 buttons = 20)?
