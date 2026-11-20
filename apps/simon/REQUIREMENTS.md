@@ -25,6 +25,11 @@
   the first game started gets included too (`adr/0004`).
 - [x] Installable as its own home-screen app (`manifest.json` + icons);
   versioned independently in `apps.json` — see root `README.md`.
+- [x] Connecting (Host or Join) always shows an error and re-enables
+  Continue if it fails, instead of the button just staying disabled
+  with no feedback — covers both PeerJS failing to load at all and the
+  connection simply hanging (`adr/0006`, in the shared `shared/
+  multiphone.js` networking helper, also used by FM-1 Clone).
 
 ## Open questions / possible future work
 - [ ] What should happen if the host disconnects mid-game? (Currently:
