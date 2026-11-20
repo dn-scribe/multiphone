@@ -217,6 +217,11 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   this never changes again on its own, even if that patch does later).
   Replace it anytime with the normal instrument-cycle button
   (`adr/0029`).
+- [x] Connecting (Host or Join) always shows an error and re-enables
+  Continue if it fails, instead of the button just staying disabled
+  with no feedback — a fix in the shared `shared/multiphone.js`
+  networking helper this app and Phone Simon both use; see Phone
+  Simon's `adr/0006` for the decision.
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between

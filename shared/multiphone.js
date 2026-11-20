@@ -30,10 +30,25 @@
     let code=opts.code||genCode();
     let myId=null, peer=null;
 
+    // Two failure modes besides a real PeerJS 'error' event: the PeerJS
+    // script itself can fail to load (a flaky connection, an ad-blocker,
+    // a CDN hiccup), in which case `new Peer(...)` throws synchronously -
+    // "ReferenceError: Peer is not defined" - before any error handler
+    // even exists to catch it; or the signaling connection can simply
+    // hang with neither 'open' nor 'error' ever firing. Both used to mean
+    // onError() never ran, leaving the UI's "Continue" button disabled
+    // forever with no feedback - the exact "it just does nothing" dead
+    // end this guards against now.
     function open(tries){
       tries=tries||0;
-      peer=new Peer(peerIdFor(appId,code));
+      const timeout=setTimeout(()=>{ opts.onError&&opts.onError(new Error('Timed out connecting.')); },12000);
+      try{
+        peer=new Peer(peerIdFor(appId,code));
+      }catch(e){
+        clearTimeout(timeout); opts.onError&&opts.onError(e); return;
+      }
       peer.on('open',id=>{
+        clearTimeout(timeout);
         myId=id;
         peer.on('connection',conn=>{
           let joined=false;
@@ -46,7 +61,8 @@
         opts.onReady&&opts.onReady(code,myId);
       });
       peer.on('error',e=>{
-        if(String(e.type)==='unavailable-id' && tries<5){ peer.destroy(); code=opts.code||genCode(); open(tries+1); return; }
+        if(String(e.type)==='unavailable-id' && tries<5){ clearTimeout(timeout); peer.destroy(); code=opts.code||genCode(); open(tries+1); return; }
+        clearTimeout(timeout);
         opts.onError&&opts.onError(e);
       });
     }
@@ -63,19 +79,27 @@
 
   function join(opts){
     opts=opts||{};
-    const peer=new Peer();
+    const timeout=setTimeout(()=>{ opts.onError&&opts.onError(new Error('Timed out connecting.')); },12000);
+    let peer;
+    try{
+      peer=new Peer();
+    }catch(e){
+      clearTimeout(timeout); opts.onError&&opts.onError(e);
+      return {get myId(){return null},send(){}};
+    }
     let myId=null, conn=null;
     peer.on('open',id=>{
       myId=id;
       conn=peer.connect(peerIdFor(opts.appId,opts.code),{reliable:true});
       conn.on('open',()=>{
+        clearTimeout(timeout);
         conn.send(opts.joinData||{});
         conn.on('data',d=>opts.onMessage&&opts.onMessage(d));
         conn.on('close',()=>opts.onClose&&opts.onClose());
         opts.onOpen&&opts.onOpen(myId);
       });
     });
-    peer.on('error',e=>{ opts.onError&&opts.onError(e); });
+    peer.on('error',e=>{ clearTimeout(timeout); opts.onError&&opts.onError(e); });
     return {
       get myId(){return myId},
       send(msg){ if(conn&&conn.open) conn.send(msg); },
