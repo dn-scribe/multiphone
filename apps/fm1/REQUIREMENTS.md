@@ -201,14 +201,23 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   adapts (drum name instead of note name, no Slide toggle, since slide
   has nothing to glide on a drum hit) (`adr/0027`).
 - [x] **Chord tool**: a 🎵 Chords mode inside Drum Pad (toggle next to
-  🥁 Drums) — 7 pads, the diatonic triads of C major, with their own
-  octave ◀/▶. Plays the full chord live through whatever patch
-  Keyboard/Controls currently have set; recording/edit-mode entry
-  captures the chord's root note, same as any other note (no true
-  per-step chords — see open questions). New **⌨️ Keyboard Sound**
-  instrument option: a track set to it always plays back using
-  Keyboard's *current* patch, resolved fresh every time, not a frozen
-  copy — picked manually, never automatic (`adr/0028`).
+  🥁 Drums) — 7 pads with their own octave ◀/▶. Plays the full chord
+  live through whatever patch Keyboard/Controls currently have set;
+  block-mode recording/edit-mode entry captures the chord's root note,
+  same as any other note (no true per-step chords — see open
+  questions). New **⌨️ Keyboard Sound** instrument option: a track set
+  to it always plays back using Keyboard's *current* patch, resolved
+  fresh every time, not a frozen copy — picked manually, never
+  automatic (`adr/0028`).
+- [x] **144 chords, and an Arp mode**: each of the 7 chord pads is
+  independently assignable to any of 12 roots × 12 qualities (Major,
+  Minor, Dim, Aug, Sus2, Sus4, 6, Minor 6, 7, Major 7, Minor 7, Add9) —
+  hold a pad to open a root/quality picker, saved per phone. A new Arp
+  toggle changes what holding a pad does: off, the usual block chord;
+  on, its notes play one at a time, cycling, for as long as it's held —
+  and since arpeggio notes aren't simultaneous, each one gets recorded
+  individually (not just the root), a richer capture than block mode's
+  (`adr/0030`).
 - [x] **A track adopts the instrument it was recorded with**: capturing
   a note (live recording or edit-mode instant entry) now auto-sets the
   track's instrument to match — 🥁 Drum Kit for a drum hit, or a new

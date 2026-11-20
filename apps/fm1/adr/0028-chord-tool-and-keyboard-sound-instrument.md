@@ -1,7 +1,10 @@
 # 28. Chord tool (a Drum Pad mode) and the Keyboard Sound instrument
 
 ## Status
-Accepted
+Accepted. `adr/0030` expanded the fixed 7-chord set below into 144
+choosable chords (12 roots x 12 qualities) and added an arpeggio mode -
+the Keyboard Sound instrument and the rest of this decision are
+unchanged.
 
 ## Context
 Requested directly: "a chord tool, as an option of the drum pad. Sound

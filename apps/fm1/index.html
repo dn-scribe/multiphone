@@ -261,17 +261,41 @@ const DRUM_BY_NOTE={}; DRUM_KIT.forEach(d=>{ DRUM_BY_NOTE[d.note]=d; });
 // panel already uses. Plays the full chord live (polyphonic, using
 // whatever patch Keyboard/Controls currently have set - the same
 // shared `lsGet('patch',...)`), but only the chord's root note is sent
-// as the recordable {t:'note',...} message, since a step still holds
-// one note - same deliberate "no true chords in the step data" scope
-// boundary as every other per-step feature in this app (adr/0013).
-const CHORD_KIT=[
-  {label:'C',  offsets:[0,4,7]},
-  {label:'Dm', offsets:[2,5,9]},
-  {label:'Em', offsets:[4,7,11]},
-  {label:'F',  offsets:[5,9,12]},
-  {label:'G',  offsets:[7,11,14]},
-  {label:'Am', offsets:[9,12,16]},
-  {label:'B°', offsets:[11,14,17]},
+// as the recordable {t:'note',...} message in block mode, since a step
+// still holds one note - same deliberate "no true chords in the step
+// data" scope boundary as every other per-step feature in this app
+// (adr/0013). Arpeggio mode (adr/0030) sidesteps that boundary somewhat
+// honestly: its notes really are one at a time, so each one is a
+// genuine recordable note in its own right.
+//
+// 7 pads, each independently assignable to any of 12 roots x 12
+// qualities (144 chords total, adr/0030) - a pad is {root,quality}, not
+// a fixed chord; chordLabel()/chordNotesFor() compute the rest.
+const CHORD_QUALITIES=[
+  {key:'maj',  label:'Major',  suffix:'',    offsets:[0,4,7]},
+  {key:'min',  label:'Minor',  suffix:'m',   offsets:[0,3,7]},
+  {key:'dim',  label:'Dim',    suffix:'°',   offsets:[0,3,6]},
+  {key:'aug',  label:'Aug',    suffix:'+',   offsets:[0,4,8]},
+  {key:'sus2', label:'Sus2',   suffix:'sus2',offsets:[0,2,7]},
+  {key:'sus4', label:'Sus4',   suffix:'sus4',offsets:[0,5,7]},
+  {key:'6',    label:'6',      suffix:'6',   offsets:[0,4,7,9]},
+  {key:'m6',   label:'Minor 6',suffix:'m6',  offsets:[0,3,7,9]},
+  {key:'7',    label:'7',      suffix:'7',   offsets:[0,4,7,10]},
+  {key:'maj7', label:'Major 7',suffix:'maj7',offsets:[0,4,7,11]},
+  {key:'min7', label:'Minor 7',suffix:'m7',  offsets:[0,3,7,10]},
+  {key:'add9', label:'Add9',   suffix:'add9',offsets:[0,4,7,14]},
+];
+function chordQuality(key){ return CHORD_QUALITIES.find(q=>q.key===key)||CHORD_QUALITIES[0]; }
+function chordLabel(root,qualityKey){ return NOTE_NAMES[root]+chordQuality(qualityKey).suffix; }
+function chordNotesFor(root,qualityKey,octave){
+  const base=(octave+1)*12+root;
+  return chordQuality(qualityKey).offsets.map(o=>base+o);
+}
+// The original 7 diatonic triads of C major, now expressed as
+// {root,quality} - still the default pad layout, just editable now.
+const DEFAULT_CHORD_PADS=[
+  {root:0, quality:'maj'}, {root:2, quality:'min'}, {root:4, quality:'min'}, {root:5, quality:'maj'},
+  {root:7, quality:'maj'}, {root:9, quality:'min'}, {root:11,quality:'dim'},
 ];
 const DRUM_KIT_INSTRUMENT={key:'drumkit',label:'🥁 Drum Kit',patch:null};
 // A track can also be set to "always sound like whatever Keyboard is
@@ -740,10 +764,13 @@ function createControlsPanel(el,room){
 // ⏺ Record and play along, or select a step in ✏️ edit mode and tap a
 // pad to set that step's drum instantly - inspired by Phone Band
 // (apps/band), whose percussion synthesis this reuses almost verbatim
-// (adr/0027). A Chords mode was added alongside it (adr/0028): same
-// pad-grid/recording mechanics, but each pad plays a full chord with
+// (adr/0027). A Chords mode sits alongside it (adr/0028): same
+// pad-grid/recording mechanics, but each pad plays a chord with
 // whichever patch Keyboard/Controls currently have set, instead of a
-// drum hit.
+// drum hit. Each of the 7 chord pads is independently assignable to any
+// of 12 roots x 12 qualities (hold a pad to edit it), and an Arp toggle
+// turns holding a pad from one block chord into a looping arpeggio
+// (adr/0030).
 function createDrumPadPanel(el,room){
   el.innerHTML=`
     <div class="body">
@@ -755,11 +782,19 @@ function createDrumPadPanel(el,room){
         <button class="octBtn" type="button" data-d="-1">◀ Oct</button>
         <div class="octLabel">Oct 4</div>
         <button class="octBtn" type="button" data-d="1">Oct ▶</button>
+        <button class="octBtn arpBtn" type="button">Arp: Off</button>
       </div>
       <p class="hint drumsHint" style="padding:0 0 4px">Tap a pad to play. Arm a Tracks track's ⏺ Record and hit Play to record live, on time with the loop - or put a track in ✏️ edit mode and tap a pad to set the selected step's drum instantly.</p>
-      <p class="hint chordsHint" style="padding:0 0 4px;display:none">Tap a pad to play the full chord, in whatever sound Keyboard/Controls currently have set. Recording (or edit-mode entry) captures the chord's root note - set a Tracks track's instrument to ⌨️ Keyboard Sound so it plays back in that same sound.</p>
+      <p class="hint chordsHint" style="padding:0 0 4px;display:none">Tap a pad to play it - hold to arpeggiate instead if Arp is on. Hold a pad *without* playing for a moment longer to pick a different root/quality for it. Recording (or edit-mode entry) captures each played note - in block mode just the chord's root, in Arp mode every note of the arpeggio, same as any other note.</p>
       <div class="grid drumPads" style="grid-template-columns:repeat(2,1fr)"></div>
       <div class="grid chordPads" style="grid-template-columns:repeat(2,1fr);display:none"></div>
+      <div class="chordEditPanel" style="display:none;border-top:2px dashed #333;margin-top:8px;padding-top:8px">
+        <div class="ctlLabel">Editing Pad <span class="editingPadNum"></span> ⓘ</div>
+        <div class="grid rootPicker" style="grid-template-columns:repeat(6,1fr)"></div>
+        <label class="ctlLabel" style="padding-top:6px">Quality</label>
+        <div class="grid qualityPicker" style="grid-template-columns:repeat(3,1fr)"></div>
+        <button class="big closeChordEditBtn" type="button">Done</button>
+      </div>
     </div>`;
   const q=sel=>el.querySelector(sel);
   const drumWrap=q('.drumPads'), chordWrap=q('.chordPads');
@@ -779,33 +814,122 @@ function createDrumPadPanel(el,room){
     b.addEventListener('pointercancel',off);
     drumWrap.appendChild(b);
   });
+
   let chordOctave=4;
-  const heldChords={}; // chord label -> array of active voices, for multi-touch
-  CHORD_KIT.forEach(c=>{
-    const b=document.createElement('button'); b.type='button'; b.className='choice';
-    b.textContent=c.label;
-    b.addEventListener('pointerdown',e=>{
-      e.preventDefault();
-      audio();
-      const patch=lsGet('patch',null)||DEFAULT_PATCH;
-      const base=(chordOctave+1)*12;
-      const notes=c.offsets.map(o=>base+o);
-      heldChords[c.label]=notes.map(n=>triggerVoice(patch,noteToFreq(n)));
-      navigator.vibrate?.(12);
-      room.send({t:'note',note:notes[0],on:true,chord:c.label});
+  let arpMode=lsGet('chordArp',false);
+  const ARP_RATE_MS=130;
+  let chordPads=lsGet('chordPads',null)||DEFAULT_CHORD_PADS.map(p=>({...p}));
+  function saveChordPads(){ lsSet('chordPads',chordPads); }
+  const heldChords={}; // pad index -> {voices:[...]} (block) or {timer,curVoice} (arp)
+
+  function startChordSound(i,cp){
+    const patch=lsGet('patch',null)||DEFAULT_PATCH;
+    const notes=chordNotesFor(cp.root,cp.quality,chordOctave);
+    const label=chordLabel(cp.root,cp.quality);
+    navigator.vibrate?.(12);
+    if(arpMode){
+      let step=0;
+      function playNext(){
+        const note=notes[step%notes.length]; step++;
+        const prev=heldChords[i]&&heldChords[i].curVoice;
+        if(prev) releaseVoice(prev,patch);
+        const v=triggerVoice(patch,noteToFreq(note));
+        heldChords[i]={timer:heldChords[i]&&heldChords[i].timer,curVoice:v};
+        room.send({t:'note',note,on:true,chord:label});
+        setTimeout(()=>room.send({t:'note',note,on:false,chord:label}),Math.min(90,ARP_RATE_MS*0.8));
+      }
+      playNext();
+      const timer=setInterval(playNext,ARP_RATE_MS);
+      heldChords[i].timer=timer;
+    } else {
+      const voices=notes.map(n=>triggerVoice(patch,noteToFreq(n)));
+      heldChords[i]={voices};
+      room.send({t:'note',note:notes[0],on:true,chord:label});
+    }
+  }
+  function stopChordSound(i,cp){
+    const patch=lsGet('patch',null)||DEFAULT_PATCH;
+    const h=heldChords[i]; if(!h) return;
+    if(h.timer){ clearInterval(h.timer); if(h.curVoice) releaseVoice(h.curVoice,patch); }
+    if(h.voices){ h.voices.forEach(v=>releaseVoice(v,patch)); }
+    delete heldChords[i];
+    const notes=chordNotesFor(cp.root,cp.quality,chordOctave);
+    room.send({t:'note',note:notes[0],on:false,chord:chordLabel(cp.root,cp.quality)});
+  }
+
+  let editingPadIndex=null;
+  function openChordEditor(i){
+    editingPadIndex=i;
+    q('.editingPadNum').textContent=(i+1)+' ('+chordLabel(chordPads[i].root,chordPads[i].quality)+')';
+    renderRootPicker(); renderQualityPicker();
+    q('.chordEditPanel').style.display='block';
+  }
+  function closeChordEditor(){ editingPadIndex=null; q('.chordEditPanel').style.display='none'; }
+  function renderRootPicker(){
+    const wrap=q('.rootPicker'); wrap.innerHTML='';
+    NOTE_NAMES.forEach((name,root)=>{
+      const b=document.createElement('button'); b.type='button';
+      b.className='choice small'+(chordPads[editingPadIndex].root===root?' sel':'');
+      b.textContent=name;
+      b.onclick=()=>{
+        chordPads[editingPadIndex].root=root; saveChordPads();
+        renderRootPicker(); renderChordPads();
+        q('.editingPadNum').textContent=(editingPadIndex+1)+' ('+chordLabel(chordPads[editingPadIndex].root,chordPads[editingPadIndex].quality)+')';
+      };
+      wrap.appendChild(b);
     });
-    const off=()=>{
-      const patch=lsGet('patch',null)||DEFAULT_PATCH;
-      (heldChords[c.label]||[]).forEach(v=>releaseVoice(v,patch));
-      delete heldChords[c.label];
-      const base=(chordOctave+1)*12;
-      room.send({t:'note',note:base+c.offsets[0],on:false,chord:c.label});
-    };
-    b.addEventListener('pointerup',off);
-    b.addEventListener('pointerleave',off);
-    b.addEventListener('pointercancel',off);
-    chordWrap.appendChild(b);
+  }
+  function renderQualityPicker(){
+    const wrap=q('.qualityPicker'); wrap.innerHTML='';
+    CHORD_QUALITIES.forEach(qual=>{
+      const b=document.createElement('button'); b.type='button';
+      b.className='choice small'+(chordPads[editingPadIndex].quality===qual.key?' sel':'');
+      b.textContent=qual.label;
+      b.onclick=()=>{
+        chordPads[editingPadIndex].quality=qual.key; saveChordPads();
+        renderQualityPicker(); renderChordPads();
+        q('.editingPadNum').textContent=(editingPadIndex+1)+' ('+chordLabel(chordPads[editingPadIndex].root,chordPads[editingPadIndex].quality)+')';
+      };
+      wrap.appendChild(b);
+    });
+  }
+  q('.closeChordEditBtn').addEventListener('click',closeChordEditor);
+
+  function renderChordPads(){
+    chordWrap.innerHTML='';
+    chordPads.forEach((cp,i)=>{
+      const b=document.createElement('button'); b.type='button'; b.className='choice';
+      b.textContent=chordLabel(cp.root,cp.quality);
+      let holdTimer=null, heldForEdit=false;
+      b.addEventListener('pointerdown',e=>{
+        e.preventDefault();
+        heldForEdit=false;
+        startChordSound(i,cp);
+        holdTimer=setTimeout(()=>{
+          heldForEdit=true;
+          stopChordSound(i,cp);
+          openChordEditor(i);
+        },500);
+      });
+      const release=()=>{
+        clearTimeout(holdTimer);
+        if(!heldForEdit) stopChordSound(i,cp);
+        heldForEdit=false;
+      };
+      b.addEventListener('pointerup',release);
+      b.addEventListener('pointerleave',release);
+      b.addEventListener('pointercancel',release);
+      chordWrap.appendChild(b);
+    });
+  }
+  renderChordPads();
+
+  function refreshArpBtn(){ q('.arpBtn').textContent='Arp: '+(arpMode?'On':'Off'); q('.arpBtn').classList.toggle('active',arpMode); }
+  attachTooltip(q('.arpBtn'),'Arp: holding a chord pad plays its notes one at a time, repeating, instead of all together - each note gets recorded individually too.',()=>{
+    arpMode=!arpMode; lsSet('chordArp',arpMode); refreshArpBtn();
   });
+  refreshArpBtn();
+
   q('.chordOctRow').addEventListener('click',e=>{
     const d=e.target.dataset.d; if(!d) return;
     const next=chordOctave+(+d);
@@ -814,7 +938,7 @@ function createDrumPadPanel(el,room){
   q('.modeDrums').addEventListener('click',()=>{
     q('.modeDrums').classList.add('sel'); q('.modeChords').classList.remove('sel');
     drumWrap.style.display=''; chordWrap.style.display='none';
-    q('.chordOctRow').style.display='none';
+    q('.chordOctRow').style.display='none'; closeChordEditor();
     q('.drumsHint').style.display=''; q('.chordsHint').style.display='none';
   });
   q('.modeChords').addEventListener('click',()=>{
