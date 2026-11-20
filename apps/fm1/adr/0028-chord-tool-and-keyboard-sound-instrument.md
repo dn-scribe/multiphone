@@ -4,7 +4,9 @@
 Accepted. `adr/0030` expanded the fixed 7-chord set below into 144
 choosable chords (12 roots x 12 qualities) and added an arpeggio mode -
 the Keyboard Sound instrument and the rest of this decision are
-unchanged.
+unchanged. `adr/0031` later replaced block-mode recording's "captures
+the chord's root note" (described below) with true per-step chords -
+recording now captures the whole chord.
 
 ## Context
 Requested directly: "a chord tool, as an option of the drum pad. Sound

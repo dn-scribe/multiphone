@@ -1,7 +1,9 @@
 # 30. Chord tool: arpeggio mode + choose from a much larger chord set
 
 ## Status
-Accepted
+Accepted. `adr/0031` later gave block mode true per-step chord
+recording too (previously root-only, same as arpeggio mode already
+had per-note).
 
 ## Context
 Requested directly: "Add to chords arpeggio capabilities + a capability

@@ -331,6 +331,16 @@ function allInstruments(){
   const custom=loadCustomInstruments().map(inst=>({key:'custom:'+inst.id,label:inst.name,patch:inst.patch}));
   return [DRUM_KIT_INSTRUMENT,KEYBOARD_SOUND_INSTRUMENT].concat(builtins,custom);
 }
+// Same as allInstruments(), but for a SPECIFIC track's own instrument-cycle
+// button: once that track has recorded something (track.recordedPatch is
+// set), 'recorded' is spliced into its cycle list so tapping the button
+// repeatedly always eventually loops back to it - otherwise, cycling away
+// from 'recorded' by mistake would leave no way back to it (adr/0031),
+// even though the snapshot itself is still sitting there in recordedPatch.
+function instrumentCycleList(track){
+  const list=allInstruments();
+  return track.recordedPatch ? [{key:'recorded',label:'🎙️ Recorded',patch:null}].concat(list) : list;
+}
 function resolveInstrument(key){
   if(key==='keyboardsound') return {key,label:KEYBOARD_SOUND_INSTRUMENT.label,patch:lsGet('patch',null)||DEFAULT_PATCH};
   // 'recorded' is a per-track frozen snapshot (track.recordedPatch), not a
@@ -345,7 +355,14 @@ function resolveInstrument(key){
 // ---------- Shared step/track helpers (Sequencer + Track Writer both use these) ----------
 const DEFAULT_NOTE=69; // A4 - the default pitch before a step's note is set
 const TRACK_DEFAULT_KEYS=['preset:epiano','preset:bass','preset:bell','preset:brass'];
-function newStep(){ return {on:false,accent:false,ratchet:1,chance:100,condition:'all',note:DEFAULT_NOTE,tie:false,slide:false}; }
+// `notes` is an array, not a single number - usually length 1, but a
+// block-recorded chord (adr/0031) can hold several, all triggered/
+// released together. Everything that used to read/write a step's
+// single `note` now reads/writes `notes[0]` (for drums, cycling, the
+// stepper's primary pitch) or the whole array (for actually sounding
+// it and for drag-to-tie/recording, so a tied or dragged run carries
+// the full chord, not just its root).
+function newStep(){ return {on:false,accent:false,ratchet:1,chance:100,condition:'all',notes:[DEFAULT_NOTE],tie:false,slide:false}; }
 function newSteps(n){ return Array.from({length:n},newStep); }
 function resizeSteps(steps,n){
   steps=Array.isArray(steps)?steps:[];
@@ -377,14 +394,15 @@ function fireTrackStep(track,s,si,intervalMs,room){
   // pad input, so a recording track doesn't re-record its own hits.
   if(track.instrumentKey==='drumkit'){
     const velocity=s.accent?1.0:0.72;
-    const drum=DRUM_BY_NOTE[s.note]||DRUM_KIT[0];
+    const note=s.notes[0];
+    const drum=DRUM_BY_NOTE[note]||DRUM_KIT[0];
     const n=s.ratchet||1, slice=intervalMs/n;
     for(let r=0;r<n;r++){
       setTimeout(()=>{
         audio();
         DRUM_SYNTH[drum.fn](ctx.currentTime+0.001,velocity);
-        room.send({t:'note',note:s.note,on:true,drum:drum.name,synth:true});
-        setTimeout(()=>room.send({t:'note',note:s.note,on:false,drum:drum.name,synth:true}),60);
+        room.send({t:'note',note,notes:[note],on:true,drum:drum.name,synth:true});
+        setTimeout(()=>room.send({t:'note',note,notes:[note],on:false,drum:drum.name,synth:true}),60);
       },r*slice);
     }
     return;
@@ -396,35 +414,38 @@ function fireTrackStep(track,s,si,intervalMs,room){
     ? {patch:track.recordedPatch||DEFAULT_PATCH}
     : resolveInstrument(track.instrumentKey);
   const basePatch=Object.assign({},inst.patch,{vol:inst.patch.vol*(s.accent?1.0:0.72)});
-  const freq=noteToFreq(s.note);
   const tieExtra=legatoExtensionSteps(track.steps,si)*intervalMs;
   // `synth:true` marks these as playback echoes, not real Keyboard input -
   // sent only so Controls' "now playing" can reflect them too. Without it,
   // a recording track's own played-back notes would be mistaken for fresh
   // Keyboard input and re-recorded onto whatever step is current *then*,
   // cascading forward one step at a time every loop (adr/0026).
-  if(s.slide && track._lastVoice){
-    const v=track._lastVoice;
+  // Slide only makes sense note-for-note between two single-note steps -
+  // a chord step (more than one note) always falls through to a normal
+  // (re)trigger of every note in it instead.
+  if(s.slide && s.notes.length===1 && track._lastVoices && track._lastVoices.length===1){
+    const v=track._lastVoices[0];
+    const freq=noteToFreq(s.notes[0]);
     slideVoiceToFreq(v,basePatch,freq,intervalMs*0.8);
-    room.send({t:'note',note:s.note,on:true,synth:true});
+    room.send({t:'note',note:s.notes[0],notes:s.notes,on:true,synth:true});
     const holdMs=Math.max(20,intervalMs*0.6)+tieExtra;
     setTimeout(()=>{
-      if(track._lastVoice===v){ releaseVoice(v,basePatch); track._lastVoice=null; }
-      room.send({t:'note',note:s.note,on:false,synth:true});
+      if(track._lastVoices&&track._lastVoices[0]===v){ releaseVoice(v,basePatch); track._lastVoices=null; }
+      room.send({t:'note',note:s.notes[0],notes:s.notes,on:false,synth:true});
     },holdMs);
     return;
   }
   const n=s.ratchet||1, slice=intervalMs/n;
   for(let r=0;r<n;r++){
     setTimeout(()=>{
-      const v=triggerVoice(basePatch,freq);
-      track._lastVoice=v;
-      room.send({t:'note',note:s.note,on:true,synth:true});
+      const voices=s.notes.map(note=>triggerVoice(basePatch,noteToFreq(note)));
+      track._lastVoices=voices;
+      room.send({t:'note',note:s.notes[0],notes:s.notes,on:true,synth:true});
       const holdMs=Math.max(20,slice*0.6)+(r===n-1?tieExtra:0);
       setTimeout(()=>{
-        if(track._lastVoice===v){ releaseVoice(v,basePatch); track._lastVoice=null; }
-        else releaseVoice(v,basePatch);
-        room.send({t:'note',note:s.note,on:false,synth:true});
+        if(track._lastVoices===voices){ track._lastVoices=null; }
+        voices.forEach(v=>releaseVoice(v,basePatch));
+        room.send({t:'note',note:s.notes[0],notes:s.notes,on:false,synth:true});
       },holdMs);
     },r*slice);
   }
@@ -437,10 +458,12 @@ function fireTrackStep(track,s,si,intervalMs,room){
 // above. Mirrors Felucca's own Piano Roll "stretching notes" gesture
 // (adr/0019), just via drag instead of a resize handle.
 function drawTieRun(steps,startIdx,endIdx){
-  const startPitch = steps[startIdx].on ? steps[startIdx].note : DEFAULT_NOTE;
+  // Carries the WHOLE chord if the start step has one - dragging a tie
+  // across a recorded chord extends the full chord, not just its root.
+  const startNotes = steps[startIdx].on ? steps[startIdx].notes.slice() : [DEFAULT_NOTE];
   for(let i=startIdx;i<=endIdx;i++){
     const s=steps[i];
-    s.on=true; s.note=startPitch; s.tie=(i>startIdx);
+    s.on=true; s.notes=startNotes.slice(); s.tie=(i>startIdx);
     if(i>startIdx){ s.accent=false; s.ratchet=1; }
   }
 }
@@ -613,13 +636,13 @@ function createKeyboardPanel(el,room){
     k.classList.add('on');
     held[note]=triggerVoice(patch,noteToFreq(note));
     navigator.vibrate?.(10);
-    room.send({t:'note',note,on:true});
+    room.send({t:'note',note,notes:[note],on:true});
   }
   function noteOff(note,k){
     const v=held[note]; if(!v) return;
     k.classList.remove('on');
     releaseVoice(v,patch); delete held[note];
-    room.send({t:'note',note,on:false});
+    room.send({t:'note',note,notes:[note],on:false});
   }
   q('.octRow').addEventListener('click',e=>{
     const d=e.target.dataset.d; if(!d) return;
@@ -806,9 +829,9 @@ function createDrumPadPanel(el,room){
       audio();
       DRUM_SYNTH[d.fn](ctx.currentTime+0.001,1.0);
       navigator.vibrate?.(12);
-      room.send({t:'note',note:d.note,on:true,drum:d.name});
+      room.send({t:'note',note:d.note,notes:[d.note],on:true,drum:d.name});
     });
-    const off=()=>room.send({t:'note',note:d.note,on:false,drum:d.name});
+    const off=()=>room.send({t:'note',note:d.note,notes:[d.note],on:false,drum:d.name});
     b.addEventListener('pointerup',off);
     b.addEventListener('pointerleave',off);
     b.addEventListener('pointercancel',off);
@@ -835,8 +858,8 @@ function createDrumPadPanel(el,room){
         if(prev) releaseVoice(prev,patch);
         const v=triggerVoice(patch,noteToFreq(note));
         heldChords[i]={timer:heldChords[i]&&heldChords[i].timer,curVoice:v};
-        room.send({t:'note',note,on:true,chord:label});
-        setTimeout(()=>room.send({t:'note',note,on:false,chord:label}),Math.min(90,ARP_RATE_MS*0.8));
+        room.send({t:'note',note,notes:[note],on:true,chord:label});
+        setTimeout(()=>room.send({t:'note',note,notes:[note],on:false,chord:label}),Math.min(90,ARP_RATE_MS*0.8));
       }
       playNext();
       const timer=setInterval(playNext,ARP_RATE_MS);
@@ -844,7 +867,7 @@ function createDrumPadPanel(el,room){
     } else {
       const voices=notes.map(n=>triggerVoice(patch,noteToFreq(n)));
       heldChords[i]={voices};
-      room.send({t:'note',note:notes[0],on:true,chord:label});
+      room.send({t:'note',note:notes[0],notes:notes,on:true,chord:label});
     }
   }
   function stopChordSound(i,cp){
@@ -854,7 +877,7 @@ function createDrumPadPanel(el,room){
     if(h.voices){ h.voices.forEach(v=>releaseVoice(v,patch)); }
     delete heldChords[i];
     const notes=chordNotesFor(cp.root,cp.quality,chordOctave);
-    room.send({t:'note',note:notes[0],on:false,chord:chordLabel(cp.root,cp.quality)});
+    room.send({t:'note',note:notes[0],notes:notes,on:false,chord:chordLabel(cp.root,cp.quality)});
   }
 
   let editingPadIndex=null;
@@ -1020,7 +1043,10 @@ function createTracksPanel(el,room){
       t.steps=resizeSteps(t.steps,patternLen);
       t.steps.forEach(s=>{
         if(s.ratchet==null) s.ratchet=1; if(s.chance==null) s.chance=100; if(s.condition==null) s.condition='all';
-        if(s.note==null) s.note=DEFAULT_NOTE; if(s.tie==null) s.tie=false; if(s.slide==null) s.slide=false;
+        // migrate a pre-adr/0031 single `note` to `notes`, an array
+        if(!Array.isArray(s.notes)) s.notes=[s.note!=null?s.note:DEFAULT_NOTE];
+        delete s.note;
+        if(s.tie==null) s.tie=false; if(s.slide==null) s.slide=false;
       });
       t.editIndex=0;
     });
@@ -1041,7 +1067,7 @@ function createTracksPanel(el,room){
   function cloneTrackForSave(t){
     return {instrumentKey:t.instrumentKey,recordedPatch:t.recordedPatch||null,muted:t.muted,solo:t.solo,
       steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,chance:s.chance,condition:s.condition,
-        note:s.note,tie:s.tie,slide:s.slide}))};
+        notes:s.notes.slice(),tie:s.tie,slide:s.slide}))};
   }
   function snapshotPattern(name){
     return {id:Date.now()+'-'+Math.random().toString(36).slice(2,6),name,patternLen,swing,loop,tracks:tracks.map(cloneTrackForSave)};
@@ -1054,7 +1080,7 @@ function createTracksPanel(el,room){
       instrumentKey:t.instrumentKey, recordedPatch:t.recordedPatch||null, muted:t.muted, solo:t.solo,
       steps:resizeSteps(t.steps.map(s=>({on:s.on,accent:s.accent,
         ratchet:s.ratchet!=null?s.ratchet:1, chance:s.chance!=null?s.chance:100, condition:s.condition||'all',
-        note:s.note!=null?s.note:DEFAULT_NOTE, tie:!!s.tie, slide:!!s.slide})),patternLen),
+        notes:Array.isArray(s.notes)?s.notes.slice():[s.note!=null?s.note:DEFAULT_NOTE], tie:!!s.tie, slide:!!s.slide})),patternLen),
       editMode:false, editIndex:0, recording:false,
     }));
     saveTracks();
@@ -1161,6 +1187,7 @@ function createTracksPanel(el,room){
     });
     return row;
   }
+  function noteName(n){ return NOTE_NAMES[n%12]+Math.floor(n/12-1); }
   function noteRow(track,s){
     const row=document.createElement('div'); row.className='octRow';
     const isDrum=track.instrumentKey==='drumkit';
@@ -1170,19 +1197,27 @@ function createTracksPanel(el,room){
     // A Drum Kit track's "pitch" is which drum plays - ◀▶ cycles through
     // DRUM_KIT one at a time instead of by semitone, and shows its name
     // instead of a meaningless note name. Mirrors how a connected Drum
-    // Pad's own taps set this same field (adr/0027).
-    function labelText(){ return isDrum ? (DRUM_BY_NOTE[s.note]||DRUM_KIT[0]).label : NOTE_NAMES[s.note%12]+Math.floor(s.note/12-1); }
+    // Pad's own taps set this same field (adr/0027). A step with more
+    // than one note (a recorded chord, adr/0031) lists them all; ◀▶
+    // transposes the whole chord together rather than editing one note
+    // at a time, so recording a chord stays meaningfully editable
+    // without needing a full per-note editor.
+    function labelText(){
+      if(isDrum) return (DRUM_BY_NOTE[s.notes[0]]||DRUM_KIT[0]).label;
+      return s.notes.map(noteName).join('+');
+    }
     label.textContent=labelText();
+    label.style.fontSize=s.notes.length>2?'13px':'';
     const inc=document.createElement('button'); inc.type='button'; inc.className='octBtn'; inc.textContent='▶';
     const octInc=document.createElement('button'); octInc.type='button'; octInc.className='octBtn'; octInc.textContent='▶▶';
-    function updateLabel(){ label.textContent=labelText(); }
+    function updateLabel(){ label.textContent=labelText(); label.style.fontSize=s.notes.length>2?'13px':''; }
     function step(delta){
       if(isDrum){
-        let idx=DRUM_KIT.findIndex(d=>d.note===s.note); if(idx<0) idx=0;
+        let idx=DRUM_KIT.findIndex(d=>d.note===s.notes[0]); if(idx<0) idx=0;
         idx=Math.max(0,Math.min(DRUM_KIT.length-1,idx+delta));
-        s.note=DRUM_KIT[idx].note;
+        s.notes=[DRUM_KIT[idx].note];
       } else {
-        s.note=Math.max(24,Math.min(108,s.note+delta));
+        s.notes=s.notes.map(n=>Math.max(24,Math.min(108,n+delta)));
       }
       updateLabel();
     }
@@ -1201,26 +1236,28 @@ function createTracksPanel(el,room){
     panel.style.display='block';
     const s=track.steps[track.editIndex];
     const isDrum=track.instrumentKey==='drumkit';
+    const isChord=!isDrum&&s.notes.length>1;
     const title=document.createElement('div'); title.className='ctlLabel'; title.textContent='Step '+(track.editIndex+1);
     panel.appendChild(title);
     const pLabel=document.createElement('div'); pLabel.className='ctlLabel'; pLabel.textContent=isDrum?'Drum ⓘ':'Pitch ⓘ';
     attachTooltip(pLabel,isDrum?'Which drum this step plays. ◀▶ cycles one drum at a time, ◀◀▶▶ jumps 3 - hold either to repeat, or just tap a connected Drum Pad while this step is selected.'
-      :'This step\'s note. ◀▶ moves a semitone, ◀◀▶▶ jumps an octave - hold either to repeat. Tie and slide only make sense relative to the step before them.');
+      :'This step\'s note (or, if a chord was recorded onto it, every note in that chord - ◀▶ transposes them all together). ◀▶ moves a semitone, ◀◀▶▶ jumps an octave - hold either to repeat. Tie and slide only make sense relative to the step before them.');
     panel.appendChild(pLabel);
     panel.appendChild(noteRow(track,s));
     if(s.tie){
       const tieHint=document.createElement('p'); tieHint.className='hint'; tieHint.style.padding='2px 0';
-      tieHint.textContent='This step is tied, so it never retriggers - its own '+(isDrum?'drum':'pitch')+' above has no audible effect. The sound comes from whichever earlier step started this tied run.';
+      tieHint.textContent='This step is tied, so it never retriggers - its own '+(isDrum?'drum':'pitch(es)')+' above has no audible effect. The sound comes from whichever earlier step started this tied run.';
       panel.appendChild(tieHint);
     }
-    const tsRow=document.createElement('div'); tsRow.className='grid'; tsRow.style.gridTemplateColumns=isDrum?'1fr':'repeat(2,1fr)'; tsRow.style.paddingTop='4px';
+    const tsRow=document.createElement('div'); tsRow.className='grid'; tsRow.style.gridTemplateColumns=(isDrum||isChord)?'1fr':'repeat(2,1fr)'; tsRow.style.paddingTop='4px';
     const tieBtn=document.createElement('button'); tieBtn.type='button'; tieBtn.className='choice small'+(s.tie?' sel':'');
     tieBtn.textContent='Tie: '+(s.tie?'On':'Off');
     attachTooltip(tieBtn,'Tie: don\'t retrigger here - let the previous note keep ringing through this step instead.',
       ()=>{ s.tie=!s.tie; saveTracks(); renderTrackDetail(track); });
     tsRow.append(tieBtn);
-    if(!isDrum){
-      // Slide (pitch glide) has nothing to attach to on a drum hit.
+    if(!isDrum&&!isChord){
+      // Slide (pitch glide) has nothing to attach to on a drum hit, or on
+      // a chord step (more than one note - which note would it glide?).
       const slideBtn=document.createElement('button'); slideBtn.type='button'; slideBtn.className='choice small'+(s.slide?' sel':'');
       slideBtn.textContent='Slide: '+(s.slide?'On':'Off');
       attachTooltip(slideBtn,'Slide: glide from the previous note\'s pitch into this one instead of a hard retrigger.',
@@ -1257,7 +1294,7 @@ function createTracksPanel(el,room){
       instBtn.textContent=resolveInstrument(track.instrumentKey).label;
       track._instBtn=instBtn; // so recording (outside this closure) can refresh the label when it auto-assigns an instrument
       attachTooltip(instBtn,'Tap to cycle this track\'s instrument.',()=>{
-        const list=allInstruments(); const idx=list.findIndex(i=>i.key===track.instrumentKey);
+        const list=instrumentCycleList(track); const idx=list.findIndex(i=>i.key===track.instrumentKey);
         track.instrumentKey=list[(idx+1)%list.length].key;
         instBtn.textContent=resolveInstrument(track.instrumentKey).label; saveTracks();
       });
@@ -1347,25 +1384,25 @@ function createTracksPanel(el,room){
       if(track._instBtn) track._instBtn.textContent=resolveInstrument(track.instrumentKey).label;
     }
   }
-  let liveNote=null, liveNoteLastStep=-1;
+  let liveNotes=null, liveNoteLastStep=-1;
   room.onMessage(msg=>{
     if(msg.t!=='note'||msg.synth) return; // ignore our own playback echoes - see fireTrackStep
     if(msg.on){
-      liveNote=msg.note;
+      liveNotes=Array.isArray(msg.notes)?msg.notes:[msg.note];
       tracks.forEach(track=>{
         if(track.editMode&&!track.recording){
           const s=track.steps[track.editIndex];
-          s.on=true; s.note=msg.note; adoptSourceInstrument(track,msg); saveTracks(); renderTrackDetail(track);
+          s.on=true; s.notes=liveNotes.slice(); adoptSourceInstrument(track,msg); saveTracks(); renderTrackDetail(track);
           if(track._stepRefreshers) track._stepRefreshers[track.editIndex]();
         } else if(track.recording&&playing&&stepIndex!==liveNoteLastStep){
           const s=track.steps[stepIndex];
-          s.on=true; s.note=msg.note; s.tie=liveNoteLastStep!==-1; s.accent=false; s.ratchet=1; s.slide=false;
+          s.on=true; s.notes=liveNotes.slice(); s.tie=liveNoteLastStep!==-1; s.accent=false; s.ratchet=1; s.slide=false;
           adoptSourceInstrument(track,msg);
           if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
         }
       });
       liveNoteLastStep=stepIndex;
-    } else if(liveNote===msg.note){ liveNote=null; liveNoteLastStep=-1; }
+    } else if(liveNotes&&liveNotes[0]===msg.note){ liveNotes=null; liveNoteLastStep=-1; }
   });
 
   function tick(){
@@ -1397,11 +1434,11 @@ function createTracksPanel(el,room){
     // starts actually sounding from the step grid on the next loop. The
     // stepIndex!==liveNoteLastStep guard skips a step the note-on
     // handler above already wrote for this same held note.
-    if(liveNote!=null&&stepIndex!==liveNoteLastStep){
+    if(liveNotes!=null&&stepIndex!==liveNoteLastStep){
       tracks.forEach(track=>{
         if(track.recording){
           const s=track.steps[stepIndex];
-          s.on=true; s.note=liveNote; s.tie=liveNoteLastStep!==-1; s.accent=false; s.ratchet=1; s.slide=false;
+          s.on=true; s.notes=liveNotes.slice(); s.tie=liveNoteLastStep!==-1; s.accent=false; s.ratchet=1; s.slide=false;
           if(track._stepRefreshers) track._stepRefreshers[stepIndex]();
         }
       });
@@ -1494,7 +1531,7 @@ function createTracksPanel(el,room){
     const data={appId:'fm1-tracks',schema:1,len:patternLen,bpm,swing,loop,
       tracks:tracks.map(t=>({instrumentKey:t.instrumentKey,recordedPatch:t.recordedPatch||null,muted:t.muted,solo:t.solo,
         steps:t.steps.map(s=>({on:s.on,accent:s.accent,ratchet:s.ratchet,chance:s.chance,condition:s.condition,
-          note:s.note,tie:s.tie,slide:s.slide}))}))};
+          notes:s.notes.slice(),tie:s.tie,slide:s.slide}))}))};
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a'); a.href=url;
@@ -1516,7 +1553,7 @@ function createTracksPanel(el,room){
       steps:resizeSteps((Array.isArray(t.steps)?t.steps:[]).map(s=>({
         on:!!s.on, accent:!!s.accent, ratchet:s.ratchet!=null?s.ratchet:1,
         chance:s.chance!=null?s.chance:100, condition:s.condition||'all',
-        note:s.note!=null?s.note:DEFAULT_NOTE, tie:!!s.tie, slide:!!s.slide,
+        notes:Array.isArray(s.notes)?s.notes.slice():[s.note!=null?s.note:DEFAULT_NOTE], tie:!!s.tie, slide:!!s.slide,
       })),patternLen),
     }));
     saveTracks();

@@ -203,9 +203,9 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
 - [x] **Chord tool**: a 🎵 Chords mode inside Drum Pad (toggle next to
   🥁 Drums) — 7 pads with their own octave ◀/▶. Plays the full chord
   live through whatever patch Keyboard/Controls currently have set;
-  block-mode recording/edit-mode entry captures the chord's root note,
-  same as any other note (no true per-step chords — see open
-  questions). New **⌨️ Keyboard Sound** instrument option: a track set
+  block-mode recording/edit-mode entry captures the **whole chord**,
+  not just its root (`adr/0031`). New **⌨️ Keyboard Sound** instrument
+  option: a track set
   to it always plays back using Keyboard's *current* patch, resolved
   fresh every time, not a frozen copy — picked manually, never
   automatic (`adr/0028`).
@@ -224,8 +224,19 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   **🎙️ Recorded** pseudo-instrument that freezes a snapshot of
   Keyboard/Controls' patch at that moment (unlike ⌨️ Keyboard Sound,
   this never changes again on its own, even if that patch does later).
-  Replace it anytime with the normal instrument-cycle button
-  (`adr/0029`).
+  Replace it anytime with the normal instrument-cycle button — and once
+  a track has recorded anything, 🎙️ Recorded stays a permanent, reachable
+  stop in that track's own cycle, so cycling away from it by mistake
+  never loses it (`adr/0029`, `adr/0031`).
+- [x] **True per-step chords**: a step's data is now `notes` (an
+  array), not a single `note` — almost always length 1, but a
+  block-recorded chord, an arpeggio note landing on a ratcheted step,
+  or a drag-tied run all hold every note together. Playback triggers
+  all of a chord step's notes at once; the step detail panel shows a
+  joined label ("C4+E4+G4") and transposes the whole chord together;
+  Slide is restricted to single-note steps (gliding a chord note-for-
+  note isn't defined). Export/Import and Patterns/Song both migrate old
+  single-`note` data automatically (`adr/0031`).
 - [x] Connecting (Host or Join) always shows an error and re-enables
   Continue if it fails, instead of the button just staying disabled
   with no feedback — a fix in the shared `shared/multiphone.js`
@@ -257,13 +268,10 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   list.
 - [ ] Sequencer: true continuous per-step velocity, not just the
   binary accent built in Phase 2.
-- [ ] Tracks: true per-step chords (a step playing more than one note at
-  once) are still not built, even with a Chord tool now live on Drum
-  Pad (`adr/0028`) — only a chord's root note gets recorded, since the
-  step model stays one-note-per-step. Parameter locks also still open
-  (`adr/0016`). Live recording itself is now built (`adr/0024`), but
-  with no separate, adjustable quantize amount - a note always lands on
-  whichever step is current at that tick.
+- [ ] Tracks: parameter locks still open (`adr/0016`). Live recording
+  itself is now built (`adr/0024`), with true per-step chords on top of
+  it (`adr/0031`), but with no separate, adjustable quantize amount - a
+  note always lands on whichever step is current at that tick.
 - [ ] Sequencer: a scale-locked pitch picker (e.g. "stay in C major")
   instead of raw semitone-by-semitone stepping.
 - [ ] Song: no reordering UI (remove + re-add via ➕ is the current
