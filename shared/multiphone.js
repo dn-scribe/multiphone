@@ -79,27 +79,45 @@
 
   function join(opts){
     opts=opts||{};
-    const timeout=setTimeout(()=>{ opts.onError&&opts.onError(new Error('Timed out connecting.')); },12000);
-    let peer;
-    try{
-      peer=new Peer();
-    }catch(e){
-      clearTimeout(timeout); opts.onError&&opts.onError(e);
-      return {get myId(){return null},send(){}};
-    }
-    let myId=null, conn=null;
-    peer.on('open',id=>{
-      myId=id;
-      conn=peer.connect(peerIdFor(opts.appId,opts.code),{reliable:true});
-      conn.on('open',()=>{
-        clearTimeout(timeout);
-        conn.send(opts.joinData||{});
-        conn.on('data',d=>opts.onMessage&&opts.onMessage(d));
-        conn.on('close',()=>opts.onClose&&opts.onClose());
-        opts.onOpen&&opts.onOpen(myId);
+    let myId=null, conn=null, attemptsLeft=3;
+    function attempt(){
+      const timeout=setTimeout(()=>{ opts.onError&&opts.onError(new Error('Timed out connecting.')); },12000);
+      let peer;
+      try{
+        peer=new Peer();
+      }catch(e){
+        clearTimeout(timeout); opts.onError&&opts.onError(e);
+        return;
+      }
+      peer.on('open',id=>{
+        myId=id;
+        conn=peer.connect(peerIdFor(opts.appId,opts.code),{reliable:true});
+        conn.on('open',()=>{
+          clearTimeout(timeout);
+          conn.send(opts.joinData||{});
+          conn.on('data',d=>opts.onMessage&&opts.onMessage(d));
+          conn.on('close',()=>opts.onClose&&opts.onClose());
+          opts.onOpen&&opts.onOpen(myId);
+        });
       });
-    });
-    peer.on('error',e=>{ clearTimeout(timeout); opts.onError&&opts.onError(e); });
+      peer.on('error',e=>{
+        // 'peer-unavailable' is PeerJS's "that room code doesn't exist" -
+        // but with several phones joining the same host in close
+        // succession, the signaling server can report it transiently even
+        // though the host is right there (reported directly: a 3rd phone
+        // got "room doesn't exist" when the host plainly existed, since
+        // two others had just joined it). Worth a couple of quick retries
+        // before trusting it, same caution the host side already applies
+        // to its own room-code collisions below.
+        if(String(e.type)==='peer-unavailable' && attemptsLeft>1){
+          attemptsLeft--; clearTimeout(timeout); peer.destroy();
+          setTimeout(attempt,500);
+          return;
+        }
+        clearTimeout(timeout); opts.onError&&opts.onError(e);
+      });
+    }
+    attempt();
     return {
       get myId(){return myId},
       send(msg){ if(conn&&conn.open) conn.send(msg); },
