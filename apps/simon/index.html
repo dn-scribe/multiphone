@@ -151,6 +151,7 @@
   <div id="overlay">
     <h2>GAME OVER</h2>
     <p id="finalRound"></p>
+    <button class="big" id="continueBtn" style="display:none">↩️ Continue — replay this round</button>
     <button class="big" id="playAgain" style="display:none">Play Again</button>
     <a class="big" href="../../" style="text-decoration:none;text-align:center">Home</a>
   </div>
@@ -271,7 +272,7 @@ function startHost(){
       if(gameActive){ gameActive=false; room.broadcast({t:'gameover',round:sequence.length,reason:'left'}); }
       room.broadcast({t:'lobby',players:players.map(p=>({id:p.id,n:p.n,name:p.name,emoji:p.emoji})),hostId:myId,mode});
     },
-    onMessage:(msg)=>{ if(msg.t==='press') hostHandlePress(msg.idx); else if(msg.t==='restart') hostRestart(); else handleMessage(msg); },
+    onMessage:(msg)=>{ if(msg.t==='press') hostHandlePress(msg.idx); else if(msg.t==='restart') hostRestart(); else if(msg.t==='continue') hostContinue(); else handleMessage(msg); },
     onError:(e)=>{ $('countErr').textContent='Could not start the room. Check your connection and try again.'; $('countGo').disabled=false; },
   });
 }
@@ -360,6 +361,13 @@ function timing(round,advanced){
 function hostNextRound(){
   const total=Object.values(assignment).reduce((a,b)=>a+b.length,0);
   sequence.push(Math.floor(Math.random()*total));
+  playCurrentRound();
+}
+// Re-plays the CURRENT sequence from the start without extending it -
+// shared by hostNextRound (which pushes a new step first) and
+// hostContinue (which doesn't), so "continue" really does replay the
+// exact round that was just missed.
+function playCurrentRound(){
   expectedIndex=0;
   const {interval,on}=timing(sequence.length, mode==='advanced');
   room.broadcast({t:'roundstart',round:sequence.length,interval,on});
@@ -368,6 +376,16 @@ function hostNextRound(){
   });
   const endTime=500+sequence.length*interval+250;
   setTimeout(()=>{ awaitingServer=true; room.broadcast({t:'inputphase'}); }, endTime);
+}
+// Any player can ask to continue after a wrong press - replays the exact
+// round just missed (sequence unchanged) instead of starting a whole new
+// game, giving another chance at the same length. Unlike hostRestart(),
+// the button assignment isn't recomputed - this isn't a new game, just
+// another go at the one in progress.
+function hostContinue(){
+  if(gameActive) return; // a continue/restart is already underway - ignore duplicates
+  gameActive=true;
+  playCurrentRound();
 }
 function hostHandlePress(idx){
   if(!awaitingServer||!gameActive) return;
@@ -431,6 +449,10 @@ function setStatus(s){$('status').textContent=s}
 function uiRoundStart(msg){
   curInterval=msg.interval; curOn=msg.on; curLen=msg.round;
   awaitingClient=false;
+  // Continuing after a mistake replays the round via this same message,
+  // with the GAME OVER overlay still up from before - dismiss it here
+  // instead of waiting for a 'start' message, which a continue never sends.
+  if($('overlay').classList.contains('on')){ $('overlay').classList.remove('on'); gameActive=true; }
   $('roundLabel').textContent='Round '+msg.round;
   setStatus('Watch!');
   const dots=$('dots'); dots.innerHTML='';
@@ -451,9 +473,18 @@ function uiGameOver(msg){
   setStatus('Game over');
   playBuzzer();
   $('finalRound').textContent='Reached round '+msg.round+(msg.reason==='left'?' — a player disconnected':'');
+  // Continue only makes sense after an actual wrong press, not after a
+  // player disconnecting - the button assignment that round was built
+  // around no longer matches who's still connected.
+  $('continueBtn').style.display = msg.reason==='left' ? 'none' : 'block';
   $('playAgain').style.display='block';
   $('overlay').classList.add('on');
 }
+// Any player can ask to replay the missed round, not just whoever made
+// the mistake - the host-only authoritative state runs it. The overlay
+// hides itself once the replayed round's 'roundstart' broadcast arrives,
+// via uiRoundStart().
+$('continueBtn').onclick=()=>{ if(isHost) hostContinue(); else room.send({t:'continue'}); };
 // Any player can start a new game, not just the host - the host-only
 // authoritative state still runs the restart (recomputing the button
 // assignment from the current players, so a late joiner gets included);

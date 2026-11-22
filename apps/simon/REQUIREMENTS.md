@@ -23,6 +23,10 @@
   "Play Again," not just the host — the button assignment is rebuilt
   from whoever is *currently* connected, so a phone that joined after
   the first game started gets included too (`adr/0004`).
+- [x] Game-over from a wrong press (not from a player disconnecting)
+  also offers **Continue** — any player can tap it to replay the exact
+  round just missed (same sequence, same button assignment) instead of
+  restarting from round 1; unlimited, no life counter (`adr/0007`).
 - [x] Installable as its own home-screen app (`manifest.json` + icons);
   versioned independently in `apps.json` — see root `README.md`.
 - [x] Connecting (Host or Join) always shows an error and re-enables
@@ -30,6 +34,11 @@
   with no feedback — covers both PeerJS failing to load at all and the
   connection simply hanging (`adr/0006`, in the shared `shared/
   multiphone.js` networking helper, also used by FM-1 Clone).
+- [x] Joining retries a couple of times on a "room doesn't exist" error
+  before giving up — a real room code failing that way right after
+  other phones just joined it successfully is more likely a transient
+  signaling-server race than an actually wrong code (`adr/0007`, same
+  shared networking helper).
 
 ## Open questions / possible future work
 - [ ] What should happen if the host disconnects mid-game? (Currently:
