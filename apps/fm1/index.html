@@ -355,6 +355,11 @@ function resolveInstrument(key){
 // ---------- Shared step/track helpers (Sequencer + Track Writer both use these) ----------
 const DEFAULT_NOTE=69; // A4 - the default pitch before a step's note is set
 const TRACK_DEFAULT_KEYS=['preset:epiano','preset:bass','preset:bell','preset:brass'];
+// A track added beyond the original 4 (adr/0033) still needs a sensible
+// starting instrument - cycle back through the same list rather than
+// leaving it undefined.
+function defaultInstrumentKeyForIndex(idx){ return TRACK_DEFAULT_KEYS[idx%TRACK_DEFAULT_KEYS.length]; }
+const MAX_TRACKS=8; // a generous ceiling, not a hard product limit - just a guard against runaway taps bloating the DOM/localStorage
 // `notes` is an array, not a single number - usually length 1, but a
 // block-recorded chord (adr/0031) can hold several, all triggered/
 // released together. Everything that used to read/write a step's
@@ -1039,6 +1044,8 @@ function createTracksPanel(el,room){
       <input type="file" class="importFile" accept="application/json,.json" style="display:none">
       <p class="hint gestureHint" style="padding:4px 0 0"></p>
       <div class="seqTracks"></div>
+      <button class="big addTrackBtn" type="button">➕ Add Track</button>
+      <p class="hint" style="padding:2px 0">Hold a track's 🗑️ to delete it (can't undo). At least one track always stays.</p>
     </div>`;
   const q=sel=>el.querySelector(sel);
   const RATCHETS=[1,2,3,4];
@@ -1050,8 +1057,11 @@ function createTracksPanel(el,room){
   let swing=lsGet('seqSwing',50);
   let loop=lsGet('loop',true); // default true: continuity for anyone who only ever knew this as the Sequencer
   let tracks=lsGet('seqTracks',null);
-  if(!Array.isArray(tracks)||tracks.length!==4){
-    tracks=TRACK_DEFAULT_KEYS.map(instrumentKey=>({instrumentKey,muted:false,solo:false,steps:newSteps(patternLen)}));
+  if(!Array.isArray(tracks)||tracks.length===0){
+    // Fresh start (adr/0033): one track, not four - Add Track builds up
+    // from there. Anyone with an existing 4-track (or N-track) save keeps
+    // exactly what they had; this only applies with nothing saved yet.
+    tracks=[{instrumentKey:defaultInstrumentKeyForIndex(0),muted:false,solo:false,steps:newSteps(patternLen)}];
   } else {
     tracks.forEach(t=>{
       if(!t.instrumentKey) t.instrumentKey='preset:'+(t.preset||'epiano'); // migrate Phase 2 saves
@@ -1338,7 +1348,30 @@ function createTracksPanel(el,room){
         if(track.editMode&&track.recording){ track.recording=false; recBtn.classList.remove('active'); saveTracks(); }
         editBtn.classList.toggle('active',track.editMode); renderTrackDetail(track); updateCurHighlight();
       });
-      head.append(instBtn,muteBtn,soloBtn,recBtn,editBtn);
+      // Delete this whole track (adr/0033) - a hold-to-confirm gesture, same
+      // pattern already used for deleting a saved Pattern below, not
+      // attachTooltip's own hold-for-tooltip gesture (this button needs its
+      // own hold threshold for its own purpose, not a tooltip). Disabled
+      // while this is the only track left - there's always at least one.
+      const delBtn=document.createElement('button'); delBtn.type='button'; delBtn.textContent='🗑️';
+      delBtn.className='trackBtn delBtn';
+      delBtn.style.opacity=tracks.length<=1?'0.3':'1';
+      let delHoldTimer=null;
+      delBtn.addEventListener('pointerdown',e=>{
+        e.preventDefault();
+        if(tracks.length<=1) return;
+        delHoldTimer=setTimeout(()=>{
+          if(confirm('Delete this whole track? This can\'t be undone.')){
+            tracks=tracks.filter(t=>t!==track);
+            saveTracks(); renderTracks();
+          }
+        },600);
+      });
+      const delEndHold=()=>clearTimeout(delHoldTimer);
+      delBtn.addEventListener('pointerup',delEndHold);
+      delBtn.addEventListener('pointerleave',delEndHold);
+      delBtn.addEventListener('pointercancel',delEndHold);
+      head.append(instBtn,muteBtn,soloBtn,recBtn,editBtn,delBtn);
       const stepsRow=document.createElement('div'); stepsRow.className='seqStepsRow';
       const stepRefreshers=[];
       track._stepRefreshers=stepRefreshers;
@@ -1555,7 +1588,7 @@ function createTracksPanel(el,room){
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   function applyImportedData(data){
-    if(!data||data.appId!=='fm1-tracks'||!Array.isArray(data.tracks)||data.tracks.length!==4){
+    if(!data||data.appId!=='fm1-tracks'||!Array.isArray(data.tracks)||data.tracks.length===0){
       alert('That file doesn\'t look like a Tracks export.'); return;
     }
     patternLen=Math.max(1,+data.len||32); lsSet('seqLen',patternLen);
@@ -1563,7 +1596,7 @@ function createTracksPanel(el,room){
     swing=Math.max(50,Math.min(75,+data.swing||50)); lsSet('seqSwing',swing);
     loop=data.loop!=null?!!data.loop:false; lsSet('loop',loop);
     tracks=data.tracks.map((t,idx)=>({
-      instrumentKey:t.instrumentKey||TRACK_DEFAULT_KEYS[idx], recordedPatch:t.recordedPatch||null,
+      instrumentKey:t.instrumentKey||defaultInstrumentKeyForIndex(idx), recordedPatch:t.recordedPatch||null,
       muted:!!t.muted, solo:!!t.solo, editMode:false, editIndex:0, recording:false,
       steps:resizeSteps((Array.isArray(t.steps)?t.steps:[]).map(s=>({
         on:!!s.on, accent:!!s.accent, ratchet:s.ratchet!=null?s.ratchet:1,
@@ -1591,6 +1624,11 @@ function createTracksPanel(el,room){
   }
   attachTooltip(q('.exportBtn'),'Download the current tracks as a file - keep it as a backup, or load it on another phone/browser.',exportArrangement);
   attachTooltip(q('.importBtn'),'Load tracks from a file exported here. Replaces what\'s currently loaded.',()=>q('.importFile').click());
+  attachTooltip(q('.addTrackBtn'),'Add a new, empty track with its own instrument and steps.',()=>{
+    if(tracks.length>=MAX_TRACKS){ alert('That\'s '+MAX_TRACKS+' tracks already - delete one first.'); return; }
+    tracks.push({instrumentKey:defaultInstrumentKeyForIndex(tracks.length),muted:false,solo:false,editMode:false,editIndex:0,recording:false,steps:newSteps(patternLen)});
+    saveTracks(); renderTracks();
+  });
   q('.importFile').addEventListener('change',()=>{
     const file=q('.importFile').files[0];
     if(file) importArrangementFromFile(file);

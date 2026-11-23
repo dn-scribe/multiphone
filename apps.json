@@ -1,5 +1,5 @@
 [
   {"id":"band","title":"Phone Band","desc":"Each phone is an instrument","path":"apps/band/","icon":"🥁","version":"1.0.0"},
   {"id":"simon","title":"Phone Simon","desc":"A memory game shared across your phones","path":"apps/simon/","icon":"🧠","version":"1.2.0"},
-  {"id":"fm1","title":"FM-1 Clone","desc":"Keyboard, controls, drum pad, and tracks across your phones","path":"apps/fm1/","icon":"🎹","version":"0.19.1"}
+  {"id":"fm1","title":"FM-1 Clone","desc":"Keyboard, controls, drum pad, and tracks across your phones","path":"apps/fm1/","icon":"🎹","version":"0.20.0"}
 ]

@@ -247,6 +247,11 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   (normal on a touchscreen) no longer fires an early `pointerleave`
   that cut the note — and anything recorded from it — short of how
   long it was actually pressed (`adr/0032`).
+- [x] **Add/delete tracks**: a new phone now starts with a single
+  track, not a fixed 4 — ➕ Add Track grows the list (capped at 8),
+  and each track's 🗑️ (hold to confirm) removes it, down to a minimum
+  of 1. Export/Import and the saved-pattern library all work with any
+  track count, not just exactly 4 (`adr/0033`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
