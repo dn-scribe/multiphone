@@ -242,6 +242,11 @@ a Loop toggle). Inspired by the M-VAVE FM-1 hardware synth and its
   with no feedback — a fix in the shared `shared/multiphone.js`
   networking helper this app and Phone Simon both use; see Phone
   Simon's `adr/0006` for the decision.
+- [x] Chord pads, Keyboard keys, and Drum Pad hits capture the pointer
+  on press, so a finger drifting slightly off the button while held
+  (normal on a touchscreen) no longer fires an early `pointerleave`
+  that cut the note — and anything recorded from it — short of how
+  long it was actually pressed (`adr/0032`).
 
 ## Open questions / possible future work
 - [ ] Naming/saving more than one patch, or sharing a patch between
