@@ -611,7 +611,15 @@ function createKeyboardPanel(el,room){
       const k=document.createElement('div');
       k.className='key '+(name.includes('#')?'blk':'white');
       k.textContent=name;
-      k.addEventListener('pointerdown',e=>{ e.preventDefault(); noteOn(midi,k); });
+      k.addEventListener('pointerdown',e=>{
+        e.preventDefault();
+        // Capture so a finger drifting off the key's edge while held - easy
+        // on a key this size - still reaches pointerup/pointerleave here
+        // instead of firing a spurious early release (the note cutting out
+        // well before the key is actually lifted).
+        try{ k.setPointerCapture(e.pointerId); }catch(err){}
+        noteOn(midi,k);
+      });
       const off=()=>noteOff(midi,k);
       k.addEventListener('pointerup',off); k.addEventListener('pointerleave',off); k.addEventListener('pointercancel',off);
       rowEl.appendChild(k);
@@ -808,7 +816,7 @@ function createDrumPadPanel(el,room){
         <button class="octBtn arpBtn" type="button">Arp: Off</button>
       </div>
       <p class="hint drumsHint" style="padding:0 0 4px">Tap a pad to play. Arm a Tracks track's ⏺ Record and hit Play to record live, on time with the loop - or put a track in ✏️ edit mode and tap a pad to set the selected step's drum instantly.</p>
-      <p class="hint chordsHint" style="padding:0 0 4px;display:none">Tap a pad to play it - hold to arpeggiate instead if Arp is on. Hold a pad *without* playing for a moment longer to pick a different root/quality for it. Recording (or edit-mode entry) captures each played note - in block mode just the chord's root, in Arp mode every note of the arpeggio, same as any other note.</p>
+      <p class="hint chordsHint" style="padding:0 0 4px;display:none">Tap a pad to play it - hold to arpeggiate instead if Arp is on. Hold a pad *without* playing for a moment longer to pick a different root/quality for it. Recording (or edit-mode entry) captures the whole chord in block mode, or each note of the arpeggio in Arp mode.</p>
       <div class="grid drumPads" style="grid-template-columns:repeat(2,1fr)"></div>
       <div class="grid chordPads" style="grid-template-columns:repeat(2,1fr);display:none"></div>
       <div class="chordEditPanel" style="display:none;border-top:2px dashed #333;margin-top:8px;padding-top:8px">
@@ -826,6 +834,7 @@ function createDrumPadPanel(el,room){
     b.textContent=d.label;
     b.addEventListener('pointerdown',e=>{
       e.preventDefault();
+      try{ b.setPointerCapture(e.pointerId); }catch(err){}
       audio();
       DRUM_SYNTH[d.fn](ctx.currentTime+0.001,1.0);
       navigator.vibrate?.(12);
@@ -926,6 +935,12 @@ function createDrumPadPanel(el,room){
       let holdTimer=null, heldForEdit=false;
       b.addEventListener('pointerdown',e=>{
         e.preventDefault();
+        // Capture so a finger drifting off the pad while held - easy on a
+        // 2-column grid this size - still reaches pointerup/pointerleave
+        // here instead of firing a spurious early release, which used to
+        // cut a held chord's sound (and a recorded hold's length) far
+        // short of how long it was actually pressed.
+        try{ b.setPointerCapture(e.pointerId); }catch(err){}
         heldForEdit=false;
         startChordSound(i,cp);
         holdTimer=setTimeout(()=>{
